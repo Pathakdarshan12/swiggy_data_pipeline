@@ -1,0 +1,13 @@
+/logs/dbt.log
+/venv/
+/.env
+venv/
+swiggy/target/
+swiggy/logs/
+swiggy/dbt_packages/
+swiggy/dbt_internal_packages/
+.idea/
+.vscode/
+*.pyc
+__pycache__/
+*.log
