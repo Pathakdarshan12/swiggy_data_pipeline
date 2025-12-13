@@ -11,3 +11,4 @@ swiggy/dbt_internal_packages/
 *.pyc
 __pycache__/
 *.log
+/venv/Scripts/
