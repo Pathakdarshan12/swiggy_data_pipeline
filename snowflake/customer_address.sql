@@ -1,7 +1,7 @@
 -- ====================================================================================================
 -- CUSTOMER_ADDRESS
 -- ====================================================================================================
--- CHANGE CONTEXT
+-- CHANGE CONSTRING(100)
 USE DATABASE SWIGGY;
 USE SCHEMA BRONZE;
 USE WAREHOUSE ADHOC_WH;
@@ -9,56 +9,48 @@ USE WAREHOUSE ADHOC_WH;
 -- CREATE CUSTOMER_ADDRESS
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE BRONZE.CUSTOMER_ADDRESS_BRZ (
-    ADDRESSID TEXT,                    -- PRIMARY KEY AS TEXT
-    CUSTOMER_ID TEXT COMMENT 'CUSTOMER FK (SOURCE DATA)',                   -- FOREIGN KEY REFERENCE AS TEXT (NO CONSTRAINT IN SNOWFLAKE)
-    FLATNO TEXT,                       -- FLAT NUMBER AS TEXT
-    HOUSENO TEXT,                      -- HOUSE NUMBER AS TEXT
-    FLOOR TEXT,                        -- FLOOR AS TEXT
-    BUILDING TEXT,                     -- BUILDING NAME AS TEXT
-    LANDMARK TEXT,                     -- LANDMARK AS TEXT
-    LOCALITY TEXT,                     -- LOCALITY AS TEXT
-    CITY TEXT,                          -- CITY AS TEXT
-    STATE TEXT,                         -- STATE AS TEXT
-    PINCODE TEXT,                       -- PINCODE AS TEXT
-    COORDINATES TEXT,                  -- COORDINATES AS TEXT
-    PRIMARYFLAG TEXT,                  -- PRIMARY FLAG AS TEXT
-    ADDRESSTYPE TEXT,                  -- ADDRESS TYPE AS TEXT
-    CREATEDDATE TEXT,                  -- CREATED DATE AS TEXT
-    MODIFIEDDATE TEXT,                 -- MODIFIED DATE AS TEXT
-    -- AUDIT COLUMNS WITH APPROPRIATE DATA TYPES
-    STG_FILE_NAME TEXT,
-    STG_FILE_LOAD_TS TIMESTAMP,
-    STG_FILE_MD5 TEXT,
-    COPY_DATA_TS TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
-COMMENT = 'THIS IS THE CUSTOMER ADDRESS STAGE/RAW TABLE WHERE DATA WILL BE COPIED FROM INTERNAL STAGE USING COPY COMMAND. THIS IS AS-IS DATA REPRESETATION FROM THE SOURCE LOCATION. ALL THE COLUMNS ARE TEXT DATA TYPE EXCEPT THE AUDIT COLUMNS THAT ARE ADDED FOR TRACEABILITY.';
+    ADDRESS_BRZ_ID STRING(100),                    -- PRIMARY KEY AS STRING(100)
+    CUSTOMER_ID STRING(100) COMMENT 'CUSTOMER FK (SOURCE DATA)',                   -- FOREIGN KEY REFERENCE AS STRING(100) (NO CONSTRAINT IN SNOWFLAKE)
+    FLAT_NO STRING(100),                       -- FLAT NUMBER AS STRING(100)
+    HOUSE_NO STRING(100),                      -- HOUSE NUMBER AS STRING(100)
+    FLOOR_NO STRING(100),                        -- FLOOR_NO_NO AS STRING(100)
+    BUILDING STRING(100),                     -- BUILDING NAME AS STRING(100)
+    LANDMARK STRING(100),                     -- LANDMARK AS STRING(100)
+    LOCALITY STRING(100),                     -- LOCALITY AS STRING(100)
+    CITY STRING(100),                          -- CITY AS STRING(100)
+    STATE STRING(100),                         -- STATE AS STRING(100)
+    ZIPCODE STRING(100),                       -- ZIPCODE AS STRING(100)
+    COORDINATES STRING(100),                  -- COORDINATES AS STRING(100)
+    PRIMARYFLAG STRING(100),                  -- PRIMARY FLAG AS STRING(100)
+    ADDRESSTYPE STRING(100),                  -- ADDRESS TYPE AS STRING(100)
+    CREATED_AT TIMESTAMP_TZ,                  -- CREATED DATE AS STRING(100)
+    UPDATED_AT TIMESTAMP_TZ,                 -- MODIFIED DATE AS STRING(100)
+    BATCH_ID STRING(36)
+    )
+COMMENT = 'THIS IS THE CUSTOMER ADDRESS STAGE/RAW TABLE WHERE DATA WILL BE COPIED FROM INTERNAL STAGE USING COPY COMMAND. THIS IS AS-IS DATA REPRESETATION FROM THE SOURCE LOCATION. ALL THE COLUMNS ARE STRING(100) DATA TYPE EXCEPT THE AUDIT COLUMNS THAT ARE ADDED FOR TRACEABILITY.';
 
 -- ----------------------------------------------------------------------------------------------------
 -- CREATE CUSTOMER_ADDRESS_SLV
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE SILVER.CUSTOMER_ADDRESS_SLV (
-    CUSTOMER_ADDRESS_SK NUMBER AUTOINCREMENT PRIMARY KEY COMMENT 'SURROGATE KEY (EWH)',                -- AUTO-INCREMENTED PRIMARY KEY
-    ADDRESS_ID INT COMMENT 'PRIMARY KEY (SOURCE DATA)',                 -- PRIMARY KEY AS STRING
-    CUSTOMER_ID_FK INT COMMENT 'CUSTOMER FK (SOURCE DATA)',                -- FOREIGN KEY REFERENCE AS STRING (NO CONSTRAINT IN SNOWFLAKE)
-    FLAT_NO STRING,                    -- FLAT NUMBER AS STRING
-    HOUSE_NO STRING,                   -- HOUSE NUMBER AS STRING
-    FLOOR STRING,                      -- FLOOR AS STRING
-    BUILDING STRING,                   -- BUILDING NAME AS STRING
-    LANDMARK STRING,                   -- LANDMARK AS STRING
-    LOCALITY STRING,                   -- LOCALITY AS STRING
-    CITY STRING,                       -- CITY AS STRING
-    STATE STRING,                      -- STATE AS STRING
-    PINCODE STRING,                    -- PINCODE AS STRING
-    COORDINATES STRING,                -- COORDINATES AS STRING
-    PRIMARY_FLAG STRING,               -- PRIMARY FLAG AS STRING
-    ADDRESS_TYPE STRING,               -- ADDRESS TYPE AS STRING
-    CREATED_DATE TIMESTAMP_TZ,         -- CREATED DATE AS TIMESTAMP WITH TIME ZONE
-    MODIFIED_DATE TIMESTAMP_TZ,        -- MODIFIED DATE AS TIMESTAMP WITH TIME ZONE
-    -- AUDIT COLUMNS WITH APPROPRIATE DATA TYPES
-    STG_FILE_NAME STRING,
-    STG_FILE_LOAD_TS TIMESTAMP,
-    STG_FILE_MD5 STRING,
-    COPY_DATA_TS TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    CUSTOMER_ADDRESS_SK INTEGER PRIMARY KEY AUTOINCREMENT,                -- AUTO-INCREMENTED PRIMARY KEY
+    ADDRESS_SLV_ID INTEGER COMMENT 'PRIMARY KEY (SOURCE DATA)',                 -- PRIMARY KEY AS STRING(100)
+    CUSTOMER_ID_FK INTEGER COMMENT 'CUSTOMER FK (SOURCE DATA)',                -- FOREIGN KEY REFERENCE AS STRING(100) (NO CONSTRAINT IN SNOWFLAKE)
+    FLAT_NO STRING(100),
+    HOUSE_NO STRING(100),
+    FLOOR_NO STRING(100),
+    BUILDING STRING(100),
+    LANDMARK STRING(100),
+    LOCALITY STRING(100),
+    CITY STRING(100),
+    STATE STRING(100),
+    ZIPCODE STRING(100),
+    COORDINATES STRING(100),
+    PRIMARY_FLAG STRING(100),
+    ADDRESS_TYPE STRING(100),
+    CREATED_AT TIMESTAMP_TZ,         -- CREATED DATE AS TIMESTAMP WITH TIME ZONE
+    UPDATED_AT TIMESTAMP_TZ,        -- MODIFIED DATE AS TIMESTAMP WITH TIME ZONE
+    BATCH_ID STRING(36)
 )
 COMMENT = 'CUSTOMER ADDRESS ENTITY UNDER CLEAN SCHEMA WITH APPROPRIATE DATA TYPE UNDER CLEAN SCHEMA LAYER, DATA IS POPULATED USING MERGE STATEMENT FROM THE STAGE LAYER LOCATION TABLE. THIS TABLE DOES NOT SUPPORT SCD2';
 
@@ -66,278 +58,413 @@ COMMENT = 'CUSTOMER ADDRESS ENTITY UNDER CLEAN SCHEMA WITH APPROPRIATE DATA TYPE
 -- CREATE DIM_CUSTOMER_ADDRESS
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE GOLD.DIM_CUSTOMER_ADDRESS (
-    CUSTOMER_ADDRESS_HK NUMBER PRIMARY KEY COMMENT 'CUSTOMER ADDRESS HK (EDW)',        -- SURROGATE KEY (HASH KEY)
-    ADDRESS_ID INT COMMENT 'PRIMARY KEY (SOURCE SYSTEM)',                                -- ORIGINAL PRIMARY KEY
-    CUSTOMER_ID_FK STRING COMMENT 'CUSTOMER FK (SOURCE SYSTEM)',                            -- SURROGATE KEY FROM CUSTOMER DIMENSION (FOREIGN KEY)
-    FLAT_NO STRING,                                -- FLAT NUMBER
-    HOUSE_NO STRING,                               -- HOUSE NUMBER
-    FLOOR STRING,                                  -- FLOOR
-    BUILDING STRING,                               -- BUILDING NAME
-    LANDMARK STRING,                               -- LANDMARK
-    LOCALITY STRING,                               -- LOCALITY
-    CITY STRING,                                   -- CITY
-    STATE STRING,                                  -- STATE
-    PINCODE STRING,                                -- PINCODE
-    COORDINATES STRING,                            -- GEO-COORDINATES
-    PRIMARY_FLAG STRING,                           -- WHETHER IT'S THE PRIMARY ADDRESS
-    ADDRESS_TYPE STRING,                           -- TYPE OF ADDRESS (E.G., HOME, OFFICE)
-
+    CUSTOMER_ADDRESS_HK INTEGER PRIMARY KEY COMMENT 'CUSTOMER ADDRESS HK (EDW)',        -- SURROGATE KEY (HASH KEY)
+    ADDRESS_ID INTEGER COMMENT 'PRIMARY KEY (SOURCE SYSTEM)',                                -- ORIGINAL PRIMARY KEY
+    CUSTOMER_ID_FK STRING(100) COMMENT 'CUSTOMER FK (SOURCE SYSTEM)',                            -- SURROGATE KEY FROM CUSTOMER DIMENSION (FOREIGN KEY)
+    FLAT_NO STRING(100),                                -- FLAT NUMBER
+    HOUSE_NO STRING(100),                               -- HOUSE NUMBER
+    FLOOR_NO STRING(100),                                  -- FLOOR_NO_NO
+    BUILDING STRING(100),                               -- BUILDING NAME
+    LANDMARK STRING(100),                               -- LANDMARK
+    LOCALITY STRING(100),                               -- LOCALITY
+    CITY STRING(100),                                   -- CITY
+    STATE STRING(100),                                  -- STATE
+    ZIPCODE STRING(100),                                -- ZIPCODE
+    COORDINATES STRING(100),                            -- GEO-COORDINATES
+    PRIMARY_FLAG STRING(100),                           -- WHETHER IT'S THE PRIMARY ADDRESS
+    ADDRESS_TYPE STRING(100),                           -- TYPE OF ADDRESS (E.G., HOME, OFFICE)
     -- SCD2 COLUMNS
     EFF_START_DATE TIMESTAMP_TZ,                                 -- EFFECTIVE START DATE
     EFF_END_DATE TIMESTAMP_TZ,                                   -- EFFECTIVE END DATE (NULL IF ACTIVE)
-    IS_CURRENT BOOLEAN                                           -- FLAG TO INDICATE THE CURRENT RECORD
+    STATUS BOOLEAN,                                      -- FLAG TO INDICATE THE CURRENT RECORD
+    BATCH_ID STRING(36),
+    CREATED_AT TIMESTAMP_TZ,
+    UPDATED_AT TIMESTAMP_TZ
 );
 
 
--- ----------------------------------------------------------------------------------------------------
--- CREATE STAGE TO BRONZE
--- ----------------------------------------------------------------------------------------------------
-COPY INTO BRONZE.CUSTOMER_ADDRESS_BRZ (ADDRESSID, CUSTOMER_ID, FLATNO, HOUSENO, FLOOR, BUILDING,
-                               LANDMARK, LOCALITY,CITY,PINCODE, STATE, COORDINATES, PRIMARYFLAG, ADDRESSTYPE,
-                               CREATEDDATE, MODIFIEDDATE,
-                               STG_FILE_NAME, STG_FILE_LOAD_TS, STG_FILE_MD5, COPY_DATA_TS)
-FROM (
-    SELECT
-        T.$1::TEXT AS ADDRESSID,
-        T.$2::TEXT AS CUSTOMER_ID,
-        T.$3::TEXT AS FLATNO,
-        T.$4::TEXT AS HOUSENO,
-        T.$5::TEXT AS FLOOR,
-        T.$6::TEXT AS BUILDING,
-        T.$7::TEXT AS LANDMARK,
-        T.$8::TEXT AS LOCALITY,
-        T.$9::TEXT AS CITY,
-        T.$10::TEXT AS STATE,
-        T.$11::TEXT AS PINCODE,
-        T.$12::TEXT AS COORDINATES,
-        T.$13::TEXT AS PRIMARYFLAG,
-        T.$14::TEXT AS ADDRESSTYPE,
-        T.$15::TEXT AS CREATEDDATE,
-        T.$16::TEXT AS MODIFIEDDATE,
-        METADATA$FILENAME AS _STG_FILE_NAME,
-        METADATA$FILE_LAST_MODIFIED AS _STG_FILE_LOAD_TS,
-        METADATA$FILE_CONTENT_KEY AS _STG_FILE_MD5,
-        CURRENT_TIMESTAMP AS _COPY_DATA_TS
-    FROM '@"SWIGGY"."BRONZE"."CSV_STG"/customer_address/customer_address_book_initial.csv' T
+-- =====================================================
+-- PROCEDURE 1: STAGE TO BRONZE
+-- =====================================================
+CREATE OR REPLACE PROCEDURE BRONZE.SP_CUSTOMER_ADDRESS_STAGE_TO_BRONZE(
+    P_BATCH_ID STRING,
+    P_FILE_PATH STRING
 )
-FILE_FORMAT = (FORMAT_NAME = 'BRONZE.CSV_FILE_FORMAT')
-ON_ERROR = ABORT_STATEMENT;
-
--- ----------------------------------------------------------------------------------------------------
--- CREATE BRONZE TO SILVER
--- ----------------------------------------------------------------------------------------------------
-MERGE INTO SILVER.CUSTOMER_ADDRESS_SLV AS CLEAN
-USING (
-    SELECT
-        CAST(ADDRESSID AS INT) AS ADDRESS_ID,
-        CAST(CUSTOMER_ID AS INT) AS CUSTOMER_ID_FK,
-        FLATNO AS FLAT_NO,
-        HOUSENO AS HOUSE_NO,
-        FLOOR,
-        BUILDING,
-        LANDMARK,
-        LOCALITY,
-        CITY,
-        STATE,
-        PINCODE,
-        COORDINATES,
-        PRIMARYFLAG AS PRIMARY_FLAG,
-        ADDRESSTYPE AS ADDRESS_TYPE,
-        TRY_TO_TIMESTAMP_TZ(CREATEDDATE, 'YYYY-MM-DD"T"HH24:MI:SS') AS CREATED_DATE,
-        TRY_TO_TIMESTAMP_TZ(MODIFIEDDATE, 'YYYY-MM-DD"T"HH24:MI:SS') AS MODIFIED_DATE,
-        STG_FILE_NAME,
-        STG_FILE_LOAD_TS,
-        STG_FILE_MD5,
-        COPY_DATA_TS
-    FROM BRONZE.CUSTOMER_ADDRESS_BRZ
-) AS STAGE
-ON CLEAN.ADDRESS_ID = STAGE.ADDRESS_ID
--- INSERT NEW RECORDS
-WHEN NOT MATCHED THEN
-    INSERT (
-        ADDRESS_ID,
-        CUSTOMER_ID_FK,
-        FLAT_NO,
-        HOUSE_NO,
-        FLOOR,
-        BUILDING,
-        LANDMARK,
-        LOCALITY,
-        CITY,
-        STATE,
-        PINCODE,
-        COORDINATES,
-        PRIMARY_FLAG,
-        ADDRESS_TYPE,
-        CREATED_DATE,
-        MODIFIED_DATE,
-        STG_FILE_NAME,
-        STG_FILE_LOAD_TS,
-        STG_FILE_MD5,
-        COPY_DATA_TS
-    )
-    VALUES (
-        STAGE.ADDRESS_ID,
-        STAGE.CUSTOMER_ID_FK,
-        STAGE.FLAT_NO,
-        STAGE.HOUSE_NO,
-        STAGE.FLOOR,
-        STAGE.BUILDING,
-        STAGE.LANDMARK,
-        STAGE.LOCALITY,
-        STAGE.CITY,
-        STAGE.STATE,
-        STAGE.PINCODE,
-        STAGE.COORDINATES,
-        STAGE.PRIMARY_FLAG,
-        STAGE.ADDRESS_TYPE,
-        STAGE.CREATED_DATE,
-        STAGE.MODIFIED_DATE,
-        STAGE.STG_FILE_NAME,
-        STAGE.STG_FILE_LOAD_TS,
-        STAGE.STG_FILE_MD5,
-        STAGE.COPY_DATA_TS
-    )
--- UPDATE EXISTING RECORDS
-WHEN MATCHED THEN
-    UPDATE SET
-        CLEAN.FLAT_NO = STAGE.FLAT_NO,
-        CLEAN.HOUSE_NO = STAGE.HOUSE_NO,
-        CLEAN.FLOOR = STAGE.FLOOR,
-        CLEAN.BUILDING = STAGE.BUILDING,
-        CLEAN.LANDMARK = STAGE.LANDMARK,
-        CLEAN.LOCALITY = STAGE.LOCALITY,
-        CLEAN.CITY = STAGE.CITY,
-        CLEAN.STATE = STAGE.STATE,
-        CLEAN.PINCODE = STAGE.PINCODE,
-        CLEAN.COORDINATES = STAGE.COORDINATES,
-        CLEAN.PRIMARY_FLAG = STAGE.PRIMARY_FLAG,
-        CLEAN.ADDRESS_TYPE = STAGE.ADDRESS_TYPE,
-        CLEAN.CREATED_DATE = STAGE.CREATED_DATE,
-        CLEAN.MODIFIED_DATE = STAGE.MODIFIED_DATE,
-        CLEAN.STG_FILE_NAME = STAGE.STG_FILE_NAME,
-        CLEAN.STG_FILE_LOAD_TS = STAGE.STG_FILE_LOAD_TS,
-        CLEAN.STG_FILE_MD5 = STAGE.STG_FILE_MD5,
-        CLEAN.COPY_DATA_TS = STAGE.COPY_DATA_TS;
-
--- ----------------------------------------------------------------------------------------------------
--- SILVER TO GOLD
--- ----------------------------------------------------------------------------------------------------
-MERGE INTO
-    GOLD.DIM_CUSTOMER_ADDRESS AS TARGET
-USING
-    SILVER.CUSTOMER_ADDRESS_SLV AS SOURCE
-ON
-    TARGET.ADDRESS_ID = SOURCE.ADDRESS_ID AND
-    TARGET.CUSTOMER_ID_FK = SOURCE.CUSTOMER_ID_FK AND
-    TARGET.FLAT_NO = SOURCE.FLAT_NO AND
-    TARGET.HOUSE_NO = SOURCE.HOUSE_NO AND
-    TARGET.FLOOR = SOURCE.FLOOR AND
-    TARGET.BUILDING = SOURCE.BUILDING AND
-    TARGET.LANDMARK = SOURCE.LANDMARK AND
-    TARGET.LOCALITY = SOURCE.LOCALITY AND
-    TARGET.CITY = SOURCE.CITY AND
-    TARGET.STATE = SOURCE.STATE AND
-    TARGET.PINCODE = SOURCE.PINCODE AND
-    TARGET.COORDINATES = SOURCE.COORDINATES AND
-    TARGET.PRIMARY_FLAG = SOURCE.PRIMARY_FLAG AND
-    TARGET.ADDRESS_TYPE = SOURCE.ADDRESS_TYPE
-WHEN MATCHED
-    AND SOURCE.METADATA$ACTION = 'DELETE' AND SOURCE.METADATA$ISUPDATE = 'TRUE' THEN
-    -- UPDATE THE EXISTING RECORD TO CLOSE ITS VALIDITY PERIOD
-    UPDATE SET
-        TARGET.EFF_END_DATE = CURRENT_TIMESTAMP(),
-        TARGET.IS_CURRENT = FALSE
-WHEN NOT MATCHED
-    AND SOURCE.METADATA$ACTION = 'INSERT' AND SOURCE.METADATA$ISUPDATE = 'TRUE' THEN
-    -- INSERT NEW RECORD WITH CURRENT DATA AND NEW EFFECTIVE START DATE
-    INSERT (
-        CUSTOMER_ADDRESS_HK,
-        ADDRESS_ID,
-        CUSTOMER_ID_FK,
-        FLAT_NO,
-        HOUSE_NO,
-        FLOOR,
-        BUILDING,
-        LANDMARK,
-        LOCALITY,
-        CITY,
-        STATE,
-        PINCODE,
-        COORDINATES,
-        PRIMARY_FLAG,
-        ADDRESS_TYPE,
-        EFF_START_DATE,
-        EFF_END_DATE,
-        IS_CURRENT
-    )
-    VALUES (
-        HASH(SHA1_HEX(CONCAT(SOURCE.ADDRESS_ID, SOURCE.CUSTOMER_ID_FK, SOURCE.FLAT_NO,
-            SOURCE.HOUSE_NO, SOURCE.FLOOR, SOURCE.BUILDING, SOURCE.LANDMARK,
-            SOURCE.LOCALITY, SOURCE.CITY, SOURCE.STATE, SOURCE.PINCODE,
-            SOURCE.COORDINATES, SOURCE.PRIMARY_FLAG, SOURCE.ADDRESS_TYPE))),
-        SOURCE.ADDRESS_ID,
-        SOURCE.CUSTOMER_ID_FK,
-        SOURCE.FLAT_NO,
-        SOURCE.HOUSE_NO,
-        SOURCE.FLOOR,
-        SOURCE.BUILDING,
-        SOURCE.LANDMARK,
-        SOURCE.LOCALITY,
-        SOURCE.CITY,
-        SOURCE.STATE,
-        SOURCE.PINCODE,
-        SOURCE.COORDINATES,
-        SOURCE.PRIMARY_FLAG,
-        SOURCE.ADDRESS_TYPE,
-        CURRENT_TIMESTAMP(),
-        NULL,
-        TRUE
-    )
-WHEN NOT MATCHED
-    AND SOURCE.METADATA$ACTION = 'INSERT' AND SOURCE.METADATA$ISUPDATE = 'FALSE' THEN
-    -- INSERT NEW RECORD WITH CURRENT DATA AND NEW EFFECTIVE START DATE
-    INSERT (
-        CUSTOMER_ADDRESS_HK,
-        ADDRESS_ID,
-        CUSTOMER_ID_FK,
-        FLAT_NO,
-        HOUSE_NO,
-        FLOOR,
-        BUILDING,
-        LANDMARK,
-        LOCALITY,
-        CITY,
-        STATE,
-        PINCODE,
-        COORDINATES,
-        PRIMARY_FLAG,
-        ADDRESS_TYPE,
-        EFF_START_DATE,
-        EFF_END_DATE,
-        IS_CURRENT
-    )
-    VALUES (
-        HASH(SHA1_HEX(CONCAT(SOURCE.ADDRESS_ID, SOURCE.CUSTOMER_ID_FK, SOURCE.FLAT_NO,
-            SOURCE.HOUSE_NO, SOURCE.FLOOR, SOURCE.BUILDING, SOURCE.LANDMARK,
-            SOURCE.LOCALITY, SOURCE.CITY, SOURCE.STATE, SOURCE.PINCODE,
-            SOURCE.COORDINATES, SOURCE.PRIMARY_FLAG, SOURCE.ADDRESS_TYPE))),
-        SOURCE.ADDRESS_ID,
-        SOURCE.CUSTOMER_ID_FK,
-        SOURCE.FLAT_NO,
-        SOURCE.HOUSE_NO,
-        SOURCE.FLOOR,
-        SOURCE.BUILDING,
-        SOURCE.LANDMARK,
-        SOURCE.LOCALITY,
-        SOURCE.CITY,
-        SOURCE.STATE,
-        SOURCE.PINCODE,
-        SOURCE.COORDINATES,
-        SOURCE.PRIMARY_FLAG,
-        SOURCE.ADDRESS_TYPE,
-        CURRENT_TIMESTAMP(),
-        NULL,
-        TRUE
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    V_ROWS_LOADED INTEGER DEFAULT 0;
+BEGIN
+    -- CREATE TEMP TABLE
+    CREATE OR REPLACE TEMPORARY TABLE TEMP_CUSTOMER_ADDRESS_LOAD(
+        ADDRESS_BRZ_ID STRING(100),
+        CUSTOMER_ID STRING(100),
+        FLAT_NO STRING(100),
+        HOUSE_NO STRING(100),
+        FLOOR_NO STRING(100),
+        BUILDING STRING(100),
+        LANDMARK STRING(100),
+        LOCALITY STRING(100),
+        CITY STRING(100),
+        STATE STRING(100),
+        ZIPCODE STRING(100),
+        COORDINATES STRING(100),
+        PRIMARYFLAG STRING(100),
+        ADDRESSTYPE STRING(100)
     );
+
+    -- Copy data from stage to temp table
+    EXECUTE IMMEDIATE
+    '
+        COPY INTO TEMP_CUSTOMER_ADDRESS_LOAD (
+            ADDRESS_BRZ_ID, CUSTOMER_ID, FLAT_NO, HOUSE_NO, FLOOR_NO, BUILDING,
+            LANDMARK, LOCALITY, CITY, STATE, ZIPCODE, COORDINATES, PRIMARYFLAG, ADDRESSTYPE
+        )
+        FROM (
+            SELECT
+                $1::STRING AS ADDRESS_BRZ_ID,
+                $2::STRING AS CUSTOMER_ID,
+                $3::STRING AS FLAT_NO,
+                $4::STRING AS HOUSE_NO,
+                $5::STRING AS FLOOR_NO,
+                $6::STRING AS BUILDING,
+                $7::STRING AS LANDMARK,
+                $8::STRING AS LOCALITY,
+                $9::STRING AS CITY,
+                $10::STRING AS STATE,
+                $11::STRING AS ZIPCODE,
+                $12::STRING AS COORDINATES,
+                $13::STRING AS PRIMARYFLAG,
+                $14::STRING AS ADDRESSTYPE
+            FROM ' || P_FILE_PATH || '
+        )
+        FILE_FORMAT = (FORMAT_NAME = ''BRONZE.CSV_FILE_FORMAT'')
+        ON_ERROR = ABORT_STATEMENT
+    ';
+
+    -- Insert into bronze table
+    INSERT INTO BRONZE.CUSTOMER_ADDRESS_BRZ (
+        ADDRESS_BRZ_ID, CUSTOMER_ID, FLAT_NO, HOUSE_NO, FLOOR_NO, BUILDING,
+        LANDMARK, LOCALITY, CITY, STATE, ZIPCODE, COORDINATES, PRIMARYFLAG,
+        ADDRESSTYPE, CREATED_AT, UPDATED_AT, BATCH_ID
+    )
+    SELECT
+        ADDRESS_BRZ_ID,
+        CUSTOMER_ID,
+        FLAT_NO,
+        HOUSE_NO,
+        FLOOR_NO,
+        BUILDING,
+        LANDMARK,
+        LOCALITY,
+        CITY,
+        STATE,
+        ZIPCODE,
+        COORDINATES,
+        PRIMARYFLAG,
+        ADDRESSTYPE,
+        CURRENT_TIMESTAMP(),
+        CURRENT_TIMESTAMP(),
+        :P_BATCH_ID
+    FROM TEMP_CUSTOMER_ADDRESS_LOAD;
+
+    -- Get row count
+    SELECT COUNT(*) INTO :V_ROWS_LOADED FROM TEMP_CUSTOMER_ADDRESS_LOAD;
+
+    -- Drop temp table
+    DROP TABLE IF EXISTS TEMP_CUSTOMER_ADDRESS_LOAD;
+
+    RETURN 'Successfully loaded ' || :V_ROWS_LOADED || ' rows with batch_id: ' || :P_BATCH_ID;
+
+EXCEPTION
+    WHEN OTHER THEN
+        RETURN 'Error occurred: ' || SQLERRM;
+END;
+$$;
+
+-- =====================================================
+-- PROCEDURE 2: BRONZE TO SILVER
+-- =====================================================
+CREATE OR REPLACE PROCEDURE SILVER.SP_CUSTOMER_ADDRESS_BRONZE_TO_SILVER(
+    P_BATCH_ID STRING
+)
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    V_BATCH_DUP_CNT  INTEGER DEFAULT 0;
+    V_STAGE_DUP_CNT  INTEGER DEFAULT 0;
+    V_ROWS_MERGED    INTEGER DEFAULT 0;
+BEGIN
+    /* ===================================================
+       1. LOG DUPLICATES WITHIN SAME BATCH
+    =================================================== */
+    INSERT INTO COMMON.LOAD_ERROR (
+        SOURCE_TABLE,
+        RECORD_ID,
+        BATCH_ID,
+        ERROR_TYPE,
+        ERROR_MESSAGE
+    )
+    SELECT
+        'BRONZE.CUSTOMER_ADDRESS_BRZ',
+        TRY_CAST(ADDRESS_BRZ_ID AS INT),
+        BATCH_ID,
+        'BATCH_DUPLICATE',
+        'Duplicate ADDRESS_BRZ_ID found in same batch'
+    FROM BRONZE.CUSTOMER_ADDRESS_BRZ
+    WHERE BATCH_ID = :P_BATCH_ID
+    QUALIFY COUNT(*) OVER (
+        PARTITION BY ADDRESS_BRZ_ID, BATCH_ID
+    ) > 1;
+
+    V_BATCH_DUP_CNT := SQLROWCOUNT;
+
+
+    /* ===================================================
+       2. LOG DUPLICATES ALREADY IN SILVER (STAGE DUP)
+    =================================================== */
+    INSERT INTO COMMON.LOAD_ERROR (
+        SOURCE_TABLE,
+        RECORD_ID,
+        BATCH_ID,
+        ERROR_TYPE,
+        ERROR_MESSAGE
+    )
+    SELECT
+        'SILVER.CUSTOMER_ADDRESS_SLV',
+        TRY_CAST(B.ADDRESS_BRZ_ID AS INT),
+        B.BATCH_ID,
+        'STAGE_DUPLICATE',
+        'ADDRESS already exists in SILVER table'
+    FROM BRONZE.CUSTOMER_ADDRESS_BRZ B
+    INNER JOIN SILVER.CUSTOMER_ADDRESS_SLV S
+        ON TRY_CAST(B.ADDRESS_BRZ_ID AS INT) = S.ADDRESS_SLV_ID
+    WHERE B.BATCH_ID = :P_BATCH_ID;
+
+    V_STAGE_DUP_CNT := SQLROWCOUNT;
+
+
+    /* ===================================================
+       3. MERGE ONLY CLEAN RECORDS
+          - NOT batch duplicates
+          - NOT existing in silver
+    =================================================== */
+    MERGE INTO SILVER.CUSTOMER_ADDRESS_SLV AS TGT
+    USING (
+        SELECT *
+        FROM (
+            SELECT
+                TRY_CAST(B.ADDRESS_BRZ_ID AS INT) AS ADDRESS_SLV_ID,
+                TRY_CAST(B.CUSTOMER_ID AS INT) AS CUSTOMER_ID_FK,
+                B.FLAT_NO,
+                B.HOUSE_NO,
+                B.FLOOR_NO,
+                B.BUILDING,
+                B.LANDMARK,
+                B.LOCALITY,
+                B.CITY,
+                B.STATE,
+                B.ZIPCODE,
+                B.COORDINATES,
+                B.PRIMARYFLAG AS PRIMARY_FLAG,
+                B.ADDRESSTYPE AS ADDRESS_TYPE,
+                B.CREATED_AT,
+                B.UPDATED_AT,
+                B.BATCH_ID,
+                ROW_NUMBER() OVER (
+                    PARTITION BY B.ADDRESS_BRZ_ID
+                    ORDER BY B.UPDATED_AT DESC
+                ) AS RN
+            FROM BRONZE.CUSTOMER_ADDRESS_BRZ B
+            WHERE B.BATCH_ID = :P_BATCH_ID
+              -- exclude stage duplicates
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM SILVER.CUSTOMER_ADDRESS_SLV S
+                    WHERE S.ADDRESS_SLV_ID = TRY_CAST(B.ADDRESS_BRZ_ID AS INT)
+              )
+        )
+        WHERE RN = 1
+    ) AS SRC
+    ON TGT.ADDRESS_SLV_ID = SRC.ADDRESS_SLV_ID
+
+    WHEN NOT MATCHED THEN
+        INSERT (
+            ADDRESS_SLV_ID, CUSTOMER_ID_FK, FLAT_NO, HOUSE_NO,
+            FLOOR_NO, BUILDING, LANDMARK, LOCALITY, CITY, STATE,
+            ZIPCODE, COORDINATES, PRIMARY_FLAG, ADDRESS_TYPE,
+            CREATED_AT, UPDATED_AT, BATCH_ID
+        )
+        VALUES (
+            SRC.ADDRESS_SLV_ID, SRC.CUSTOMER_ID_FK, SRC.FLAT_NO,
+            SRC.HOUSE_NO, SRC.FLOOR_NO, SRC.BUILDING,
+            SRC.LANDMARK, SRC.LOCALITY, SRC.CITY, SRC.STATE,
+            SRC.ZIPCODE, SRC.COORDINATES, SRC.PRIMARY_FLAG,
+            SRC.ADDRESS_TYPE, SRC.CREATED_AT, SRC.UPDATED_AT,
+            SRC.BATCH_ID
+        );
+
+    V_ROWS_MERGED := SQLROWCOUNT;
+
+
+    /* ===================================================
+       4. RETURN STATUS
+    =================================================== */
+    RETURN
+        'SUCCESS | BATCH_ID=' || P_BATCH_ID ||
+        ' | ROWS_INSERTED=' || V_ROWS_MERGED ||
+        ' | BATCH_DUPLICATES=' || V_BATCH_DUP_CNT ||
+        ' | STAGE_DUPLICATES=' || V_STAGE_DUP_CNT;
+
+EXCEPTION
+    WHEN OTHER THEN
+        RETURN
+            'FAILURE | BATCH_ID=' || P_BATCH_ID ||
+            ' | ERROR=' || SQLERRM;
+END;
+$$;
+
+
+-- =====================================================
+-- PROCEDURE 3: SILVER TO GOLD (WITH SCD2)
+-- =====================================================
+CREATE OR REPLACE PROCEDURE GOLD.SP_CUSTOMER_ADDRESS_SILVER_TO_GOLD(
+    P_BATCH_ID STRING
+)
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    V_CURRENT_TIMESTAMP TIMESTAMP_TZ;
+    V_ROWS_EXPIRED INTEGER DEFAULT 0;
+    V_ROWS_INSERTED INTEGER DEFAULT 0;
+BEGIN
+    V_CURRENT_TIMESTAMP := CURRENT_TIMESTAMP();
+
+    -- Step 1: Expire records that have changed (set EFF_END_DATE and STATUS = FALSE)
+    UPDATE GOLD.DIM_CUSTOMER_ADDRESS AS TGT
+    SET
+        EFF_END_DATE = :V_CURRENT_TIMESTAMP,
+        STATUS = FALSE
+    FROM (
+        SELECT
+            SRC.ADDRESS_SLV_ID,
+            SRC.CUSTOMER_ID_FK,
+            SRC.FLAT_NO,
+            SRC.HOUSE_NO,
+            SRC.FLOOR_NO,
+            SRC.BUILDING,
+            SRC.LANDMARK,
+            SRC.LOCALITY,
+            SRC.CITY,
+            SRC.STATE,
+            SRC.ZIPCODE,
+            SRC.COORDINATES,
+            SRC.PRIMARY_FLAG,
+            SRC.ADDRESS_TYPE
+        FROM SILVER.CUSTOMER_ADDRESS_SLV SRC
+        WHERE SRC.BATCH_ID = :P_BATCH_ID
+    ) AS SRC
+    WHERE TGT.ADDRESS_ID = SRC.ADDRESS_SLV_ID
+        AND TGT.STATUS = TRUE
+        AND (
+            COALESCE(TGT.CUSTOMER_ID_FK, '') != COALESCE(SRC.CUSTOMER_ID_FK::STRING, '')
+            OR COALESCE(TGT.FLAT_NO, '') != COALESCE(SRC.FLAT_NO, '')
+            OR COALESCE(TGT.HOUSE_NO, '') != COALESCE(SRC.HOUSE_NO, '')
+            OR COALESCE(TGT.FLOOR_NO, '') != COALESCE(SRC.FLOOR_NO, '')
+            OR COALESCE(TGT.BUILDING, '') != COALESCE(SRC.BUILDING, '')
+            OR COALESCE(TGT.LANDMARK, '') != COALESCE(SRC.LANDMARK, '')
+            OR COALESCE(TGT.LOCALITY, '') != COALESCE(SRC.LOCALITY, '')
+            OR COALESCE(TGT.CITY, '') != COALESCE(SRC.CITY, '')
+            OR COALESCE(TGT.STATE, '') != COALESCE(SRC.STATE, '')
+            OR COALESCE(TGT.ZIPCODE, '') != COALESCE(SRC.ZIPCODE, '')
+            OR COALESCE(TGT.COORDINATES, '') != COALESCE(SRC.COORDINATES, '')
+            OR COALESCE(TGT.PRIMARY_FLAG, '') != COALESCE(SRC.PRIMARY_FLAG, '')
+            OR COALESCE(TGT.ADDRESS_TYPE, '') != COALESCE(SRC.ADDRESS_TYPE, '')
+        );
+
+    -- Get count of expired rows
+    V_ROWS_EXPIRED := SQLROWCOUNT;
+
+    -- Step 2: Insert new records (both brand new and changed records)
+    INSERT INTO GOLD.DIM_CUSTOMER_ADDRESS (
+        CUSTOMER_ADDRESS_HK, ADDRESS_ID, CUSTOMER_ID_FK, FLAT_NO, HOUSE_NO, FLOOR_NO,
+        BUILDING, LANDMARK, LOCALITY, CITY, STATE, ZIPCODE, COORDINATES,
+        PRIMARY_FLAG, ADDRESS_TYPE, EFF_START_DATE, EFF_END_DATE, STATUS, BATCH_ID
+    )
+    SELECT
+        HASH(
+            SRC.ADDRESS_SLV_ID,
+            SRC.CUSTOMER_ID_FK,
+            SRC.FLAT_NO,
+            SRC.HOUSE_NO,
+            SRC.FLOOR_NO,
+            SRC.BUILDING,
+            SRC.LANDMARK,
+            SRC.LOCALITY,
+            SRC.CITY,
+            SRC.STATE,
+            SRC.ZIPCODE,
+            SRC.COORDINATES,
+            SRC.PRIMARY_FLAG,
+            SRC.ADDRESS_TYPE,
+            :V_CURRENT_TIMESTAMP
+        ) AS CUSTOMER_ADDRESS_HK,
+        SRC.ADDRESS_SLV_ID AS ADDRESS_ID,
+        SRC.CUSTOMER_ID_FK::STRING AS CUSTOMER_ID_FK,
+        SRC.FLAT_NO,
+        SRC.HOUSE_NO,
+        SRC.FLOOR_NO,
+        SRC.BUILDING,
+        SRC.LANDMARK,
+        SRC.LOCALITY,
+        SRC.CITY,
+        SRC.STATE,
+        SRC.ZIPCODE,
+        SRC.COORDINATES,
+        SRC.PRIMARY_FLAG,
+        SRC.ADDRESS_TYPE,
+        :V_CURRENT_TIMESTAMP AS EFF_START_DATE,
+        NULL AS EFF_END_DATE,
+        TRUE AS STATUS,
+        SRC.BATCH_ID
+    FROM SILVER.CUSTOMER_ADDRESS_SLV SRC
+    WHERE SRC.BATCH_ID = :P_BATCH_ID
+        AND NOT EXISTS (
+            SELECT 1
+            FROM GOLD.DIM_CUSTOMER_ADDRESS TGT
+            WHERE TGT.ADDRESS_ID = SRC.ADDRESS_SLV_ID
+                AND TGT.STATUS = TRUE
+                AND COALESCE(TGT.CUSTOMER_ID_FK, '') = COALESCE(SRC.CUSTOMER_ID_FK::STRING, '')
+                AND COALESCE(TGT.FLAT_NO, '') = COALESCE(SRC.FLAT_NO, '')
+                AND COALESCE(TGT.HOUSE_NO, '') = COALESCE(SRC.HOUSE_NO, '')
+                AND COALESCE(TGT.FLOOR_NO, '') = COALESCE(SRC.FLOOR_NO, '')
+                AND COALESCE(TGT.BUILDING, '') = COALESCE(SRC.BUILDING, '')
+                AND COALESCE(TGT.LANDMARK, '') = COALESCE(SRC.LANDMARK, '')
+                AND COALESCE(TGT.LOCALITY, '') = COALESCE(SRC.LOCALITY, '')
+                AND COALESCE(TGT.CITY, '') = COALESCE(SRC.CITY, '')
+                AND COALESCE(TGT.STATE, '') = COALESCE(SRC.STATE, '')
+                AND COALESCE(TGT.ZIPCODE, '') = COALESCE(SRC.ZIPCODE, '')
+                AND COALESCE(TGT.COORDINATES, '') = COALESCE(SRC.COORDINATES, '')
+                AND COALESCE(TGT.PRIMARY_FLAG, '') = COALESCE(SRC.PRIMARY_FLAG, '')
+                AND COALESCE(TGT.ADDRESS_TYPE, '') = COALESCE(SRC.ADDRESS_TYPE, '')
+        );
+
+    -- Get count of inserted rows
+    V_ROWS_INSERTED := SQLROWCOUNT;
+
+    RETURN 'SCD2 processing completed successfully. Batch_id: ' || :P_BATCH_ID ||
+           '. Rows expired: ' || :V_ROWS_EXPIRED ||
+           '. New rows inserted: ' || :V_ROWS_INSERTED;
+
+EXCEPTION
+    WHEN OTHER THEN
+        RETURN 'Error occurred: ' || SQLERRM;
+END;
+$$;
 -- ====================================================================================================

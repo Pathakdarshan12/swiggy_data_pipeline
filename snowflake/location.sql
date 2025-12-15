@@ -10,42 +10,31 @@ USE WAREHOUSE ADHOC_WH;
 -- CREATE LOCATION_BRZ
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE BRONZE.LOCATION_BRZ (
-    LOCATIONID TEXT,
-    CITY TEXT,
-    STATE TEXT,
-    ZIPCODE TEXT,
-    ACTIVEFLAG TEXT,
-    CREATEDDATE TEXT,
-    MODIFIEDDATE TEXT,
-    -- AUDIT COLUMNS FOR TRACKING & DEBUGGING
-    STG_FILE_NAME TEXT,
-    STG_FILE_LOAD_TS TIMESTAMP,
-    STG_FILE_MD5 TEXT,
-    COPY_DATA_TS TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    LOCATION_BRZ_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    CITY STRING,
+    STATE STRING,
+    ZIPCODE STRING,
+    BATCH_ID VARCHAR(36),
+    CREATED_AT TIMESTAMP_NTZ(9) DEFAULT CURRENT_TIMESTAMP()
 )
-COMMENT = 'THIS IS THE LOCATION STAGE/RAW TABLE WHERE DATA WILL BE COPIED FROM INTERNAL STAGE USING COPY COMMAND. THIS IS AS-IS DATA REPRESETATION FROM THE SOURCE LOCATION. ALL THE COLUMNS ARE TEXT DATA TYPE EXCEPT THE AUDIT COLUMNS THAT ARE ADDED FOR TRACEABILITY.';
+COMMENT = 'THIS IS THE LOCATION STAGE/RAW TABLE WHERE DATA WILL BE COPIED FROM INTERNAL STAGE USING COPY COMMAND. THIS IS AS-IS DATA REPRESETATION FROM THE SOURCE LOCATION. ALL THE COLUMNS ARE TEXT DATA TYPE EXCEPT THE AUDIT COLUMNS THAT ARE ADDED FOR TRACEABILITY.';;
 
 -- ----------------------------------------------------------------------------------------------------
 -- CREATING LOCATION_SLV
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE SILVER.LOCATION_SLV (
-    LOCATION_SLV_SK NUMBER AUTOINCREMENT PRIMARY KEY,
-    LOCATION_ID NUMBER NOT NULL UNIQUE,
-    CITY STRING(100) NOT NULL,
-    STATE STRING(100) NOT NULL,
-    STATE_CODE STRING(2) NOT NULL,
-    IS_UNION_TERRITORY BOOLEAN NOT NULL DEFAULT FALSE,
-    CAPITAL_CITY_FLAG BOOLEAN NOT NULL DEFAULT FALSE,
+    LOCATION_SLV_ID INTEGER AUTOINCREMENT PRIMARY KEY,
+    CITY STRING(100) ,
+    STATE STRING(100) ,
+    STATE_CODE STRING(2),
+    IS_UNION_TERRITORY BOOLEAN DEFAULT FALSE,
+    CAPITAL_CITY_FLAG BOOLEAN DEFAULT FALSE,
     CITY_TIER TEXT(6),
-    ZIP_CODE STRING(10) NOT NULL,
-    ACTIVE_FLAG STRING(10) NOT NULL,
-    CREATED_TS TIMESTAMP_TZ NOT NULL,
-    MODIFIED_TS TIMESTAMP_TZ,
-    -- ADDITIONAL AUDIT COLUMNS
-    STG_FILE_NAME STRING,
-    STG_FILE_LOAD_TS TIMESTAMP_NTZ,
-    STG_FILE_MD5 STRING,
-    COPY_DATA_TS TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP
+    ZIP_CODE STRING(10),
+    STATUS STRING(10),
+    BATCH_ID VARCHAR(36),
+    CREATED_AT TIMESTAMP_NTZ(9),
+    UPDATED_AT TIMESTAMP_NTZ(9)
 )
 COMMENT = 'LOCATION ENTITY UNDER CLEAN SCHEMA WITH APPROPRIATE DATA TYPE UNDER CLEAN SCHEMA LAYER, DATA IS POPULATED USING MERGE STATEMENT FROM THE STAGE LAYER LOCATION TABLE. THIS TABLE DOES NOT SUPPORT SCD2';
 
@@ -53,140 +42,179 @@ COMMENT = 'LOCATION ENTITY UNDER CLEAN SCHEMA WITH APPROPRIATE DATA TYPE UNDER C
 -- CREAING DIM_LOCATION
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE GOLD.DIM_LOCATION (
-    LOCATION_HK NUMBER PRIMARY KEY,                 -- HASH KEY FOR THE DIMENSION
-    LOCATION_ID NUMBER(38,0) NOT NULL,                  -- BUSINESS KEY
-    CITY VARCHAR(100) NOT NULL,                         -- CITY
-    STATE VARCHAR(100) NOT NULL,                        -- STATE
-    STATE_CODE VARCHAR(2) NOT NULL,                     -- STATE CODE
-    IS_UNION_TERRITORY BOOLEAN NOT NULL DEFAULT FALSE,  -- UNION TERRITORY FLAG
-    CAPITAL_CITY_FLAG BOOLEAN NOT NULL DEFAULT FALSE,   -- CAPITAL CITY FLAG
-    CITY_TIER VARCHAR(6),                               -- CITY TIER
-    ZIP_CODE VARCHAR(10) NOT NULL,                      -- ZIP CODE
-    ACTIVE_FLAG VARCHAR(10) NOT NULL,                   -- ACTIVE FLAG (INDICATING CURRENT RECORD)
-    EFF_START_DT TIMESTAMP_TZ(9) NOT NULL,              -- EFFECTIVE START DATE FOR SCD2
-    EFF_END_DT TIMESTAMP_TZ(9),                         -- EFFECTIVE END DATE FOR SCD2
-    CURRENT_FLAG BOOLEAN NOT NULL DEFAULT TRUE          -- INDICATOR OF THE CURRENT RECORD
-)
-COMMENT = 'DIMENSION TABLE FOR RESTAURANT LOCATION WITH SCD2 (SLOWLY CHANGING DIMENSION) ENABLED AND HASHKEY AS SURROGATE KEY';
+    LOCATION_ID NUMBER(38,0) PRIMARY KEY AUTOINCREMENT,      -- Surrogate Key
+    CITY VARCHAR(100) NOT NULL,                              -- City name
+    STATE VARCHAR(100) NOT NULL,                             -- State name
+    STATE_CODE VARCHAR(2),                                   -- State code
+    IS_UNION_TERRITORY BOOLEAN DEFAULT FALSE,                -- Union Territory flag
+    CAPITAL_CITY_FLAG BOOLEAN DEFAULT FALSE,                 -- Capital city flag
+    CITY_TIER VARCHAR(6),                                    -- City tier classification
+    ZIP_CODE VARCHAR(10) NOT NULL,                           -- Zip code
+    STATUS VARCHAR(10) DEFAULT 'ACTIVE',                     -- Record status (ACTIVE/INACTIVE)
+    EFF_START_DT TIMESTAMP_TZ(9) DEFAULT CURRENT_TIMESTAMP(),-- Effective start date
+    EFF_END_DT TIMESTAMP_TZ(9) DEFAULT '9999-12-31 23:59:59'::TIMESTAMP_TZ, -- Effective end date
+    BATCH_ID VARCHAR(36) NOT NULL,                           -- Batch identifier
+    CREATED_AT TIMESTAMP_NTZ(9) DEFAULT CURRENT_TIMESTAMP(), -- Record creation timestamp
+    UPDATED_AT TIMESTAMP_NTZ(9) DEFAULT CURRENT_TIMESTAMP() -- Record update timestamp
+);
 
 -- ----------------------------------------------------------------------------------------------------
 -- STAGE TO BRONZE
 -- ----------------------------------------------------------------------------------------------------
-COPY INTO BRONZE.LOCATION_BRZ (LOCATIONID, CITY, STATE, ZIPCODE, ACTIVEFLAG, CREATEDDATE, MODIFIEDDATE, STG_FILE_NAME, STG_FILE_LOAD_TS, STG_FILE_MD5, COPY_DATA_TS)
-FROM (
-    SELECT
-        T.$1::TEXT AS LOCATIONID,
-        T.$2::TEXT AS CITY,
-        T.$3::TEXT AS STATE,
-        T.$4::TEXT AS ZIPCODE,
-        T.$5::TEXT AS ACTIVEFLAG,
-        T.$6::TEXT AS CREATEDDATE,
-        T.$7::TEXT AS MODIFIEDDATE,
-        METADATA$FILENAME AS STG_FILE_NAME,
-        METADATA$FILE_LAST_MODIFIED AS STG_FILE_LOAD_TS,
-        METADATA$FILE_CONTENT_KEY AS STG_FILE_MD5,
-        CURRENT_TIMESTAMP AS COPY_DATA_TS
-    FROM '@"SWIGGY"."BRONZE"."CSV_STG"/location/location-5rows.csv' T
+CREATE OR REPLACE TABLE BRONZE.LOCATION_BRZ (
+    LOCATION_BRZ_ID INTEGER AUTOINCREMENT,
+    CITY STRING,
+    STATE STRING,
+    ZIPCODE STRING,
+    INGEST_RUN_ID INTEGER,
+    BATCH_ID VARCHAR(36),
+    CREATED_AT TIMESTAMP_NTZ(9)
+);
+
+CREATE OR REPLACE PROCEDURE SP_LOCATION_STAGE_TO_BRONZE(
+    p_batch_id STRING,
+    p_file_path STRING
 )
-FILE_FORMAT = (FORMAT_NAME = 'BRONZE.CSV_FILE_FORMAT')
-ON_ERROR = ABORT_STATEMENT;
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    v_created_at TIMESTAMP_NTZ(9);
+    v_rows_loaded INTEGER DEFAULT 0;
+BEGIN
+    -- Extract file name from path
+    v_created_at := CURRENT_TIMESTAMP();
+
+    -- Temp table
+    CREATE OR REPLACE TEMPORARY TABLE temp_menu_load (
+        CITY STRING,
+        STATE STRING,
+        ZIPCODE STRING
+    );
+
+    -- Load data from stage
+    EXECUTE IMMEDIATE
+    '
+        COPY INTO temp_location_load (CITY, STATE, ZIPCODE)
+        FROM (
+            SELECT $1::STRING, $2::STRING, $3::STRING
+            FROM ' || p_file_path || '
+        )
+        FILE_FORMAT = (FORMAT_NAME = ''BRONZE.CSV_FILE_FORMAT'')
+        ON_ERROR = ABORT_STATEMENT
+    ';
+
+    -- Insert into bronze table
+    INSERT INTO BRONZE.LOCATION_BRZ
+        (CITY, STATE, ZIPCODE, BATCH_ID, CREATED_AT)
+    SELECT
+        CITY,
+        STATE,
+        ZIPCODE,
+        :p_batch_id,
+        :v_created_at
+    FROM temp_location_load;
+
+    v_rows_loaded := SQLROWCOUNT;
+
+    DROP TABLE BRONZE.TEMP_LOCATION_LOAD;
+
+    RETURN
+        'Successfully loaded ' || v_rows_loaded ||
+        ' rows with batch_id: ' || :p_batch_id;
+
+EXCEPTION
+    WHEN OTHER THEN
+        RETURN
+            'Error occurred: ' || SQLERRM;
+END;
+$$;
+
+ CALL sp_location_stage_to_bronze(
+    '123',
+    '@"SWIGGY"."BRONZE"."CSV_STG"/location/location_01-01-2025.csv'
+);
 
 -- ----------------------------------------------------------------------------------------------------
 -- BRONZE TO SILVER
 -- ----------------------------------------------------------------------------------------------------
-MERGE INTO SILVER.LOCATION_SLV AS TARGET
-USING (
-    SELECT
-        CAST(LOCATIONID AS NUMBER) AS LOCATION_ID,
-        CAST(CITY AS STRING) AS CITY,
-        CASE
-            WHEN CAST(STATE AS STRING) = 'DELHI' THEN 'NEW DELHI'
-            ELSE CAST(STATE AS STRING)
-        END AS STATE,
-        -- STATE CODE MAPPING
-        CASE
-            WHEN UPPER(STATE) = 'DELHI' THEN 'DL'
-            WHEN UPPER(STATE) = 'MAHARASHTRA' THEN 'MH'
-            WHEN UPPER(STATE) = 'UTTAR PRADESH' THEN 'UP'
-            WHEN UPPER(STATE) = 'GUJARAT' THEN 'GJ'
-            WHEN UPPER(STATE) = 'RAJASTHAN' THEN 'RJ'
-            WHEN UPPER(STATE) = 'KERALA' THEN 'KL'
-            WHEN UPPER(STATE) = 'PUNJAB' THEN 'PB'
-            WHEN UPPER(STATE) = 'KARNATAKA' THEN 'KA'
-            WHEN UPPER(STATE) = 'MADHYA PRADESH' THEN 'MP'
-            WHEN UPPER(STATE) = 'ODISHA' THEN 'OR'
-            WHEN UPPER(STATE) = 'CHANDIGARH' THEN 'CH'
-            WHEN UPPER(STATE) = 'WEST BENGAL' THEN 'WB'
-            WHEN UPPER(STATE) = 'SIKKIM' THEN 'SK'
-            WHEN UPPER(STATE) = 'ANDHRA PRADESH' THEN 'AP'
-            WHEN UPPER(STATE) = 'ASSAM' THEN 'AS'
-            WHEN UPPER(STATE) = 'JAMMU AND KASHMIR' THEN 'JK'
-            WHEN UPPER(STATE) = 'PUDUCHERRY' THEN 'PY'
-            WHEN UPPER(STATE) = 'UTTARAKHAND' THEN 'UK'
-            WHEN UPPER(STATE) = 'HIMACHAL PRADESH' THEN 'HP'
-            WHEN UPPER(STATE) = 'TAMIL NADU' THEN 'TN'
-            WHEN UPPER(STATE) = 'GOA' THEN 'GA'
-            WHEN UPPER(STATE) = 'TELANGANA' THEN 'TG'
-            WHEN UPPER(STATE) = 'CHHATTISGARH' THEN 'CG'
-            WHEN UPPER(STATE) = 'JHARKHAND' THEN 'JH'
-            WHEN UPPER(STATE) = 'BIHAR' THEN 'BR'
-            ELSE NULL
-        END AS STATE_CODE,
-        CASE
-            WHEN STATE IN ('DELHI', 'CHANDIGARH', 'PUDUCHERRY', 'JAMMU AND KASHMIR') THEN 'Y'
-            ELSE 'N'
-        END AS IS_UNION_TERRITORY,
-        CASE
-            WHEN (STATE = 'DELHI' AND CITY = 'NEW DELHI') THEN TRUE
-            WHEN (STATE = 'MAHARASHTRA' AND CITY = 'MUMBAI') THEN TRUE
-            -- OTHER CONDITIONS FOR CAPITAL CITIES
-            ELSE FALSE
-        END AS CAPITAL_CITY_FLAG,
-        CASE
-            WHEN CITY IN ('MUMBAI', 'DELHI', 'BENGALURU', 'HYDERABAD', 'CHENNAI', 'KOLKATA', 'PUNE', 'AHMEDABAD') THEN 'TIER-1'
-            WHEN CITY IN ('JAIPUR', 'LUCKNOW', 'KANPUR', 'NAGPUR', 'INDORE', 'BHOPAL', 'PATNA', 'VADODARA', 'COIMBATORE',
-                          'LUDHIANA', 'AGRA', 'NASHIK', 'RANCHI', 'MEERUT', 'RAIPUR', 'GUWAHATI', 'CHANDIGARH') THEN 'TIER-2'
-            ELSE 'TIER-3'
-        END AS CITY_TIER,
-        CAST(ZIPCODE AS STRING) AS ZIP_CODE,
-        CAST(ACTIVEFLAG AS STRING) AS ACTIVE_FLAG,
-        TO_TIMESTAMP_TZ(CREATEDDATE, 'YYYY-MM-DD HH24:MI:SS') AS CREATED_TS,
-        TO_TIMESTAMP_TZ(MODIFIEDDATE, 'YYYY-MM-DD HH24:MI:SS') AS MODIFIED_TS,
-        STG_FILE_NAME,
-        STG_FILE_LOAD_TS,
-        STG_FILE_MD5,
-        CURRENT_TIMESTAMP AS COPY_DATA_TS
-    FROM BRONZE.LOCATION_BRZ
-) AS SOURCE
-ON TARGET.LOCATION_ID = SOURCE.LOCATION_ID
-WHEN MATCHED AND (
-    TARGET.CITY != SOURCE.CITY OR
-    TARGET.STATE != SOURCE.STATE OR
-    TARGET.STATE_CODE != SOURCE.STATE_CODE OR
-    TARGET.IS_UNION_TERRITORY != SOURCE.IS_UNION_TERRITORY OR
-    TARGET.CAPITAL_CITY_FLAG != SOURCE.CAPITAL_CITY_FLAG OR
-    TARGET.CITY_TIER != SOURCE.CITY_TIER OR
-    TARGET.ZIP_CODE != SOURCE.ZIP_CODE OR
-    TARGET.ACTIVE_FLAG != SOURCE.ACTIVE_FLAG OR
-    TARGET.MODIFIED_TS != SOURCE.MODIFIED_TS
-) THEN
-    UPDATE SET
-        TARGET.CITY = SOURCE.CITY,
-        TARGET.STATE = SOURCE.STATE,
-        TARGET.STATE_CODE = SOURCE.STATE_CODE,
-        TARGET.IS_UNION_TERRITORY = SOURCE.IS_UNION_TERRITORY,
-        TARGET.CAPITAL_CITY_FLAG = SOURCE.CAPITAL_CITY_FLAG,
-        TARGET.CITY_TIER = SOURCE.CITY_TIER,
-        TARGET.ZIP_CODE = SOURCE.ZIP_CODE,
-        TARGET.ACTIVE_FLAG = SOURCE.ACTIVE_FLAG,
-        TARGET.MODIFIED_TS = SOURCE.MODIFIED_TS,
-        TARGET.STG_FILE_NAME = SOURCE.STG_FILE_NAME,
-        TARGET.STG_FILE_LOAD_TS = SOURCE.STG_FILE_LOAD_TS,
-        TARGET.STG_FILE_MD5 = SOURCE.STG_FILE_MD5,
-        TARGET.COPY_DATA_TS = SOURCE.COPY_DATA_TS
-WHEN NOT MATCHED THEN
-    INSERT (
-        LOCATION_ID,
+CREATE OR REPLACE PROCEDURE SILVER.SP_LOCATION_BRONZE_TO_SILVER(BATCH_ID_PARAM VARCHAR)
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    v_rows_inserted INTEGER DEFAULT 0;
+    v_rows_updated INTEGER DEFAULT 0;
+BEGIN
+
+    -- MERGE statement for CDC (Change Data Capture)
+    MERGE INTO SILVER.LOCATION_SLV AS TGT
+    USING (
+        SELECT DISTINCT
+            UPPER(TRIM(CITY)) AS CITY,
+            UPPER(TRIM(STATE)) AS STATE,
+            UPPER(TRIM(ZIPCODE)) AS ZIP_CODE,
+            CASE
+                WHEN UPPER(TRIM(STATE)) = 'MAHARASHTRA' THEN 'MH'
+                WHEN UPPER(TRIM(STATE)) = 'DELHI' THEN 'DL'
+                WHEN UPPER(TRIM(STATE)) = 'KARNATAKA' THEN 'KA'
+                WHEN UPPER(TRIM(STATE)) = 'TAMIL NADU' THEN 'TN'
+                WHEN UPPER(TRIM(STATE)) = 'UTTAR PRADESH' THEN 'UP'
+                WHEN UPPER(TRIM(STATE)) = 'WEST BENGAL' THEN 'WB'
+                WHEN UPPER(TRIM(STATE)) = 'RAJASTHAN' THEN 'RJ'
+                WHEN UPPER(TRIM(STATE)) = 'GUJARAT' THEN 'GJ'
+                ELSE LEFT(UPPER(TRIM(STATE)), 2)
+            END AS STATE_CODE,
+            CASE
+                WHEN UPPER(TRIM(STATE)) IN ('DELHI', 'CHANDIGARH', 'PUDUCHERRY',
+                    'ANDAMAN AND NICOBAR ISLANDS', 'LAKSHADWEEP', 'DADRA AND NAGAR HAVELI',
+                    'DAMAN AND DIU', 'LADAKH', 'JAMMU AND KASHMIR')
+                THEN TRUE
+                ELSE FALSE
+            END AS IS_UNION_TERRITORY,
+            CASE
+                WHEN UPPER(TRIM(CITY)) IN ('MUMBAI', 'DELHI', 'BANGALORE', 'HYDERABAD',
+                    'CHENNAI', 'KOLKATA', 'PUNE', 'AHMEDABAD')
+                THEN TRUE
+                ELSE FALSE
+            END AS CAPITAL_CITY_FLAG,
+            CASE
+                WHEN UPPER(TRIM(CITY)) IN ('MUMBAI', 'DELHI', 'BANGALORE', 'HYDERABAD',
+                    'CHENNAI', 'KOLKATA', 'PUNE', 'AHMEDABAD')
+                THEN 'TIER1'
+                WHEN UPPER(TRIM(CITY)) IN ('NAGPUR', 'JAIPUR', 'LUCKNOW', 'CHANDIGARH',
+                    'INDORE', 'COIMBATORE', 'KOCHI', 'VISAKHAPATNAM')
+                THEN 'TIER2'
+                ELSE 'TIER3'
+            END AS CITY_TIER,
+            'ACTIVE' AS STATUS,
+            BATCH_ID AS BATCH_ID,
+            CREATED_AT
+        FROM BRONZE.LOCATION_BRZ
+        WHERE BATCH_ID = :BATCH_ID_PARAM
+    ) AS SRC
+    ON TGT.CITY = SRC.CITY
+       AND TGT.STATE = SRC.STATE
+       AND TGT.ZIP_CODE = SRC.ZIP_CODE
+
+    -- When record exists and data has changed, UPDATE
+    WHEN MATCHED AND (
+        COALESCE(TGT.STATE_CODE, '') != COALESCE(SRC.STATE_CODE, '') OR
+        COALESCE(TGT.IS_UNION_TERRITORY, FALSE) != COALESCE(SRC.IS_UNION_TERRITORY, FALSE) OR
+        COALESCE(TGT.CAPITAL_CITY_FLAG, FALSE) != COALESCE(SRC.CAPITAL_CITY_FLAG, FALSE) OR
+        COALESCE(TGT.CITY_TIER, '') != COALESCE(SRC.CITY_TIER, '')
+    ) THEN UPDATE SET
+        TGT.STATE_CODE = SRC.STATE_CODE,
+        TGT.IS_UNION_TERRITORY = SRC.IS_UNION_TERRITORY,
+        TGT.CAPITAL_CITY_FLAG = SRC.CAPITAL_CITY_FLAG,
+        TGT.CITY_TIER = SRC.CITY_TIER,
+        TGT.BATCH_ID = SRC.BATCH_ID,
+        TGT.UPDATED_AT = CURRENT_TIMESTAMP()
+
+    -- When record doesn't exist, INSERT
+    WHEN NOT MATCHED THEN INSERT (
         CITY,
         STATE,
         STATE_CODE,
@@ -194,114 +222,134 @@ WHEN NOT MATCHED THEN
         CAPITAL_CITY_FLAG,
         CITY_TIER,
         ZIP_CODE,
-        ACTIVE_FLAG,
-        CREATED_TS,
-        MODIFIED_TS,
-        STG_FILE_NAME,
-        STG_FILE_LOAD_TS,
-        STG_FILE_MD5,
-        COPY_DATA_TS
-    )
-    VALUES (
-        SOURCE.LOCATION_ID,
-        SOURCE.CITY,
-        SOURCE.STATE,
-        SOURCE.STATE_CODE,
-        SOURCE.IS_UNION_TERRITORY,
-        SOURCE.CAPITAL_CITY_FLAG,
-        SOURCE.CITY_TIER,
-        SOURCE.ZIP_CODE,
-        SOURCE.ACTIVE_FLAG,
-        SOURCE.CREATED_TS,
-        SOURCE.MODIFIED_TS,
-        SOURCE.STG_FILE_NAME,
-        SOURCE.STG_FILE_LOAD_TS,
-        SOURCE.STG_FILE_MD5,
-        SOURCE.COPY_DATA_TS
+        STATUS,
+        BATCH_ID,
+        CREATED_AT,
+        UPDATED_AT
+    ) VALUES (
+        SRC.CITY,
+        SRC.STATE,
+        SRC.STATE_CODE,
+        SRC.IS_UNION_TERRITORY,
+        SRC.CAPITAL_CITY_FLAG,
+        SRC.CITY_TIER,
+        SRC.ZIP_CODE,
+        SRC.STATUS,
+        SRC.BATCH_ID,
+        SRC.CREATED_AT,
+        CURRENT_TIMESTAMP()
     );
 
+    -- Get row counts
+    v_rows_inserted := (SELECT COUNT(*) FROM SILVER.LOCATION_SLV WHERE BATCH_ID = :BATCH_ID_PARAM AND CREATED_AT = UPDATED_AT);
+    v_rows_updated := (SELECT COUNT(*) FROM SILVER.LOCATION_SLV WHERE BATCH_ID = :BATCH_ID_PARAM AND CREATED_AT != UPDATED_AT);
+
+    RETURN 'SUCCESS: Inserted ' || v_rows_inserted || ' rows, Updated ' || v_rows_updated || ' rows';
+
+EXCEPTION
+    WHEN OTHER THEN
+        RETURN 'ERROR: ' || SQLERRM;
+END;
+$$;
+
+
+
+
+SELECT * FROM BRONZE.LOCATION_BRZ;
+CALL SILVER.SP_LOCATION_BRONZE_TO_SILVER('fc09119f-bb39-4077-afb8-e1909a623917');
+SELECT * FROM SILVER.LOCATION_SLV;
 -- ----------------------------------------------------------------------------------------------------
 -- SILVER TO GOLD
 -- ----------------------------------------------------------------------------------------------------
--- MERGE INTO
---         GOLD.DIM_LOCATION AS target
---     USING
---         SILVER.LOCATION_SLV AS source
---     ON
---         target.LOCATION_ID = source.LOCATION_ID and
---         target.ACTIVE_FLAG = source.ACTIVE_FLAG
---     WHEN MATCHED
---         AND source.METADATA$ACTION = 'DELETE' and source.METADATA$ISUPDATE = 'TRUE' THEN
---     -- Update the existing record to close its validity period
---     UPDATE SET
---         target.EFF_END_DT = CURRENT_TIMESTAMP(),
---         target.CURRENT_FLAG = FALSE
---     WHEN NOT MATCHED
---         AND source.METADATA$ACTION = 'INSERT' and source.METADATA$ISUPDATE = 'TRUE'
---     THEN
---     -- Insert new record with current data and new effective start date
---     INSERT (
---         LOCATION_HK,
---         LOCATION_ID,
---         CITY,
---         STATE,
---         STATE_CODE,
---         IS_UNION_TERRITORY,
---         CAPITAL_CITY_FLAG,
---         CITY_TIER,
---         ZIP_CODE,
---         ACTIVE_FLAG,
---         EFF_START_DT,
---         EFF_END_DT,
---         CURRENT_FLAG
---     )
---     VALUES (
---         hash(SHA1_hex(CONCAT(source.CITY, source.STATE, source.STATE_CODE, source.ZIP_CODE))),
---         source.LOCATION_ID,
---         source.CITY,
---         source.STATE,
---         source.STATE_CODE,
---         source.IS_UNION_TERRITORY,
---         source.CAPITAL_CITY_FLAG,
---         source.CITY_TIER,
---         source.ZIP_CODE,
---         source.ACTIVE_FLAG,
---         CURRENT_TIMESTAMP(),
---         NULL,
---         TRUE
---     )
---     WHEN NOT MATCHED AND
---     source.METADATA$ACTION = 'INSERT' and source.METADATA$ISUPDATE = 'FALSE' THEN
---     -- Insert new record with current data and new effective start date
---     INSERT (
---         LOCATION_HK,
---         LOCATION_ID,
---         CITY,
---         STATE,
---         STATE_CODE,
---         IS_UNION_TERRITORY,
---         CAPITAL_CITY_FLAG,
---         CITY_TIER,
---         ZIP_CODE,
---         ACTIVE_FLAG,
---         EFF_START_DT,
---         EFF_END_DT,
---         CURRENT_FLAG
---     )
---     VALUES (
---         hash(SHA1_hex(CONCAT(source.CITY, source.STATE, source.STATE_CODE, source.ZIP_CODE))),
---         source.LOCATION_ID,
---         source.CITY,
---         source.STATE,
---         source.STATE_CODE,
---         source.IS_UNION_TERRITORY,
---         source.CAPITAL_CITY_FLAG,
---         source.CITY_TIER,
---         source.ZIP_CODE,
---         source.ACTIVE_FLAG,
---         CURRENT_TIMESTAMP(),
---         NULL,
---         TRUE
---     );
+CREATE OR REPLACE PROCEDURE GOLD.SP_LOCATION_SILVER_TO_GOLD(BATCH_ID_PARAM VARCHAR)
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+DECLARE
+    v_rows_inserted INTEGER DEFAULT 0;
+    v_rows_updated INTEGER DEFAULT 0;
+    v_rows_deleted INTEGER DEFAULT 0;
+BEGIN
 
+    -- Step 1: Identify changed records and expire old versions
+    -- Set EFF_END_DT for records that have changed
+    UPDATE GOLD.DIM_LOCATION AS TGT
+    SET
+        TGT.EFF_END_DT = CURRENT_TIMESTAMP(),
+        TGT.STATUS = 'INACTIVE',
+        TGT.UPDATED_AT = CURRENT_TIMESTAMP()
+    WHERE TGT.STATUS = 'ACTIVE'
+    AND EXISTS (
+        SELECT 1
+        FROM SILVER.LOCATION_SLV AS SRC
+        WHERE SRC.BATCH_ID = :BATCH_ID_PARAM
+        AND TGT.CITY = SRC.CITY
+        AND TGT.STATE = SRC.STATE
+        AND TGT.ZIP_CODE = SRC.ZIP_CODE
+        AND (
+            COALESCE(TGT.STATE_CODE, '') != COALESCE(SRC.STATE_CODE, '') OR
+            COALESCE(TGT.IS_UNION_TERRITORY, FALSE) != COALESCE(SRC.IS_UNION_TERRITORY, FALSE) OR
+            COALESCE(TGT.CAPITAL_CITY_FLAG, FALSE) != COALESCE(SRC.CAPITAL_CITY_FLAG, FALSE) OR
+            COALESCE(TGT.CITY_TIER, '') != COALESCE(SRC.CITY_TIER, '')
+        )
+    );
+
+    v_rows_deleted := SQLROWCOUNT;
+
+    -- Step 2: Insert new versions of changed records AND new records
+    INSERT INTO GOLD.DIM_LOCATION (
+        CITY,
+        STATE,
+        STATE_CODE,
+        IS_UNION_TERRITORY,
+        CAPITAL_CITY_FLAG,
+        CITY_TIER,
+        ZIP_CODE,
+        STATUS,
+        EFF_START_DT,
+        EFF_END_DT,
+        BATCH_ID,
+        CREATED_AT,
+        UPDATED_AT
+    )
+    SELECT
+        SRC.CITY,
+        SRC.STATE,
+        SRC.STATE_CODE,
+        SRC.IS_UNION_TERRITORY,
+        SRC.CAPITAL_CITY_FLAG,
+        SRC.CITY_TIER,
+        SRC.ZIP_CODE,
+        'ACTIVE' AS STATUS,
+        CURRENT_TIMESTAMP() AS EFF_START_DT,
+        '9999-12-31 23:59:59'::TIMESTAMP_TZ AS EFF_END_DT,
+        SRC.BATCH_ID,
+        CURRENT_TIMESTAMP() AS CREATED_AT,
+        CURRENT_TIMESTAMP() AS UPDATED_AT
+    FROM SILVER.LOCATION_SLV AS SRC
+    WHERE SRC.BATCH_ID = :BATCH_ID_PARAM
+    AND NOT EXISTS (
+        -- Exclude records that haven't changed
+        SELECT 1
+        FROM GOLD.DIM_LOCATION AS TGT
+        WHERE TGT.CITY = SRC.CITY
+        AND TGT.STATE = SRC.STATE
+        AND TGT.ZIP_CODE = SRC.ZIP_CODE
+        AND TGT.STATUS = 'ACTIVE'
+        AND COALESCE(TGT.STATE_CODE, '') = COALESCE(SRC.STATE_CODE, '')
+        AND COALESCE(TGT.IS_UNION_TERRITORY, FALSE) = COALESCE(SRC.IS_UNION_TERRITORY, FALSE)
+        AND COALESCE(TGT.CAPITAL_CITY_FLAG, FALSE) = COALESCE(SRC.CAPITAL_CITY_FLAG, FALSE)
+        AND COALESCE(TGT.CITY_TIER, '') = COALESCE(SRC.CITY_TIER, '')
+    );
+
+    v_rows_inserted := SQLROWCOUNT;
+
+    RETURN 'SUCCESS: Expired ' || :v_rows_deleted || ' rows, Inserted ' || :v_rows_inserted || ' new versions';
+
+EXCEPTION
+    WHEN OTHER THEN
+        RETURN 'ERROR: ' || SQLERRM;
+END;
+$$;
 -- ====================================================================================================

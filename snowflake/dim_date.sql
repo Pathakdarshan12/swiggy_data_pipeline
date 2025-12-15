@@ -11,7 +11,7 @@ USE SCHEMA GOLD;
 -- CREATE DIM_DATE
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE GOLD.DIM_DATE (
-    DATE_DIM_HK NUMBER PRIMARY KEY COMMENT 'MENU DIM HK (EDW)',   -- SURROGATE KEY FOR DATE DIMENSION
+    DATE_DIM_HK INTEGER PRIMARY KEY AUTOINCREMENT,   -- SURROGATE KEY FOR DATE DIMENSION
     CALENDAR_DATE DATE UNIQUE,                     -- THE ACTUAL CALENDAR DATE
     YEAR NUMBER,                                   -- YEAR
     QUARTER NUMBER,                                -- QUARTER (1-4)
@@ -24,8 +24,8 @@ CREATE OR REPLACE TABLE GOLD.DIM_DATE (
 )
 COMMENT = 'DATE DIMENSION TABLE CREATED USING MIN OF ORDER DATA.';
 
-INSERT INTO GOLD.DATE_DIM
-WITH RECURSIVE MY_DATE_DIM_CTE AS
+INSERT INTO GOLD.DIM_DATE
+WITH RECURSIVE MY_DIM_DATE_CTE AS
 (
     -- ANCHOR CLAUSE
     SELECT
@@ -53,7 +53,7 @@ WITH RECURSIVE MY_DATE_DIM_CTE AS
         DAY(TODAY_R) AS DAY_OF_THE_MONTH,
         DAYNAME(TODAY_R) AS DAY_NAME
     FROM
-        MY_DATE_DIM_CTE
+        MY_DIM_DATE_CTE
     WHERE
         TODAY_R > (SELECT DATE(MIN(ORDER_DATE)) FROM SILVER.ORDERS_SLV)
 )
@@ -68,5 +68,5 @@ SELECT
     DAY_OF_WEEK,                            -- DAY OF THE WEEK (1-7)
     DAY_OF_THE_MONTH,                       -- DAY OF THE MONTH (1-31)
     DAY_NAME
-FROM MY_DATE_DIM_CTE;
+FROM MY_DIM_DATE_CTE;
 -- ====================================================================================================
