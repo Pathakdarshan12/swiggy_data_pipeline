@@ -112,45 +112,24 @@ VALUES
 CREATE OR REPLACE TABLE COMMON.BATCH (
     BATCH_ID VARCHAR(36) PRIMARY KEY,              -- Generated UUID for each run
     PIPELINE_NAME VARCHAR(100) NOT NULL,
-    BATCH_STATUS VARCHAR(20) DEFAULT 'INITIATED',
+    LAST_BATCH_EXECUTED_AT TIMESTAMP_NTZ,
 
     -- Stage Execution Tracking
     STAGE_TO_BRONZE_STATUS VARCHAR(20),            -- SUCCESS, FAILED, SKIPPED
-    STAGE_TO_BRONZE_ROWS INTEGER DEFAULT 0,
-    STAGE_TO_BRONZE_START_TIME TIMESTAMP_NTZ,
-    STAGE_TO_BRONZE_END_TIME TIMESTAMP_NTZ,
-    STAGE_TO_BRONZE_DURATION_SEC NUMBER(10,2),
-    STAGE_TO_BRONZE_ERROR VARCHAR(5000),
+    BRONZE_INSERT_RECORDS INTEGER DEFAULT 0,
 
     -- Bronze to Silver Tracking
     BRONZE_TO_SILVER_STATUS VARCHAR(20),
-    BRONZE_TO_SILVER_ROWS_INSERTED INTEGER DEFAULT 0,
-    BRONZE_TO_SILVER_ROWS_UPDATED INTEGER DEFAULT 0,
-    BRONZE_TO_SILVER_START_TIME TIMESTAMP_NTZ,
-    BRONZE_TO_SILVER_END_TIME TIMESTAMP_NTZ,
-    BRONZE_TO_SILVER_DURATION_SEC NUMBER(10,2),
-    BRONZE_TO_SILVER_ERROR VARCHAR(5000),
+    SILVER_INSERTED INTEGER DEFAULT 0,
+    SILVER_UPDATED INTEGER DEFAULT 0,
 
     -- Silver to Gold Tracking
     SILVER_TO_GOLD_STATUS VARCHAR(20),
-    SILVER_TO_GOLD_ROWS_INSERTED INTEGER DEFAULT 0,
-    SILVER_TO_GOLD_ROWS_EXPIRED INTEGER DEFAULT 0,
-    SILVER_TO_GOLD_START_TIME TIMESTAMP_NTZ,
-    SILVER_TO_GOLD_END_TIME TIMESTAMP_NTZ,
-    SILVER_TO_GOLD_DURATION_SEC NUMBER(10,2),
-    SILVER_TO_GOLD_ERROR VARCHAR(5000),
+    GOLD_INSERTED INTEGER DEFAULT 0,
+    GOLD_UPDATED INTEGER DEFAULT 0,
+    GOLD_DELETED INTEGER DEFAULT 0,
 
-    -- Overall Batch Tracking
-    TOTAL_STAGES INTEGER DEFAULT 3,
-    COMPLETED_STAGES INTEGER DEFAULT 0,
-    FAILED_STAGES INTEGER DEFAULT 0,
-    OVERALL_START_TIME TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
-    OVERALL_END_TIME TIMESTAMP_NTZ,
-    OVERALL_DURATION_SEC NUMBER(10,2),
-
-    -- Metadata
-    INITIATED_BY VARCHAR(100) DEFAULT CURRENT_USER(),
-    RETRY_ATTEMPT INTEGER DEFAULT 0
+    BATCH_LOG VARIANT
 )
 COMMENT = 'Master tracking table storing all execution details for each batch run';
 
@@ -184,14 +163,48 @@ DECLARE
     v_bronze_to_silver_proc STRING;
     v_silver_to_gold_proc STRING;
     v_pipeline_enabled BOOLEAN;
-    v_start_time TIMESTAMP_NTZ;
-    v_end_time TIMESTAMP_NTZ;
+
+    -- Stage Execution Tracking
+    v_stb_start_time TIMESTAMP_NTZ;
+    v_stb_end_time TIMESTAMP_NTZ;
+    v_stb_status VARCHAR(20);
+    v_b_inserted_records INTEGER DEFAULT 0;
+    v_stb_duration_sec NUMBER(10,2);
+    v_stb_error VARCHAR(1000);
+    v_stb_result VARIANT;
+
+    -- Bronze to Silver Tracking
+    v_bts_start_time TIMESTAMP_NTZ;
+    v_bts_end_time TIMESTAMP_NTZ;
+    v_bts_status VARCHAR(20);
+    v_s_inserted_records INTEGER DEFAULT 0;
+    v_s_updated_records INTEGER DEFAULT 0;
+    v_bts_duration_sec NUMBER(10,2);
+    v_bts_error VARCHAR(1000);
+    v_bts_result VARIANT;
+
+    -- Silver to Gold Tracking
+    v_stg_start_time TIMESTAMP_NTZ;
+    v_stg_end_time TIMESTAMP_NTZ;
+    v_stg_status VARCHAR(20);
+    v_g_inserted_records INTEGER DEFAULT 0;
+    v_g_updated_records INTEGER DEFAULT 0;
+    v_g_deleted_records INTEGER DEFAULT 0;
+    v_stg_duration_sec NUMBER(10,2);
+    v_stg_error VARCHAR(1000);
+    v_stg_result VARIANT;
+
+    v_batch_start_time TIMESTAMP_NTZ;
+    v_batch_end_time TIMESTAMP_NTZ;
+    v_last_batch_executed_at TIMESTAMP_NTZ;
+
 BEGIN
     ------------------------------------------------------------------
     -- STEP 1: INITIALIZE
     ------------------------------------------------------------------
     v_batch_id := UUID_STRING();
-    v_start_time := CURRENT_TIMESTAMP();
+    v_batch_start_time := CURRENT_TIMESTAMP();
+    v_last_batch_executed_at := CURRENT_TIMESTAMP();
 
     SELECT
         ENABLED,
@@ -206,149 +219,184 @@ BEGIN
     FROM COMMON.IMPORT_CONFIGURATION
     WHERE PIPELINE_NAME = :PIPELINE_NAME_PARAM;
 
-    IF (NOT v_pipeline_enabled) THEN
-        RETURN 'PIPELINE DISABLED: ' || :PIPELINE_NAME_PARAM;
-    END IF;
-
-    INSERT INTO COMMON.BATCH (
-        BATCH_ID,
-        PIPELINE_NAME,
-        BATCH_STATUS,
-        OVERALL_START_TIME,
-        INITIATED_BY
-    )
-    VALUES (
-        :v_batch_id,
-        :PIPELINE_NAME_PARAM,
-        'RUNNING',
-        :v_start_time,
-        CURRENT_USER()
-    );
+    -- INITIALIZE BATCH TABLE
+    INSERT INTO COMMON.BATCH(BATCH_ID, PIPELINE_NAME)
+    VALUES (:v_batch_id, :PIPELINE_NAME_PARAM);
 
     ------------------------------------------------------------------
     -- STEP 2: STAGE → BRONZE
     ------------------------------------------------------------------
     BEGIN
-        UPDATE COMMON.BATCH
-        SET STAGE_TO_BRONZE_START_TIME = CURRENT_TIMESTAMP()
-        WHERE BATCH_ID = :v_batch_id;
+        v_stb_start_time := CURRENT_TIMESTAMP();
 
-        EXECUTE IMMEDIATE
-            'CALL ' || v_stage_to_bronze_proc || '(?, ?)'
-        USING
-            (v_batch_id, STAGE_PATH_PARAM);
+        -- Call stored procedure dynamically
+        LET res RESULTSET := (EXECUTE IMMEDIATE 'CALL ' || :v_stage_to_bronze_proc || '(?, ?)' USING (v_batch_id, STAGE_PATH_PARAM));
+        LET cur CURSOR FOR res;
+        OPEN cur;
+        FETCH cur INTO v_stb_result;
+        CLOSE cur;
 
-        UPDATE COMMON.BATCH
-        SET
-            STAGE_TO_BRONZE_STATUS = 'SUCCESS',
-            STAGE_TO_BRONZE_END_TIME = CURRENT_TIMESTAMP(),
-            STAGE_TO_BRONZE_DURATION_SEC =
-                DATEDIFF(SECOND, STAGE_TO_BRONZE_START_TIME, CURRENT_TIMESTAMP())
-        WHERE BATCH_ID = :v_batch_id;
+        -- Extract values from the result array
+        v_stb_status := v_stb_result[0]::VARCHAR;
+        v_b_inserted_records := v_stb_result[1]::INTEGER;
+        v_stb_end_time := CURRENT_TIMESTAMP();
+        v_stb_duration_sec := DATEDIFF(SECOND, v_stb_start_time, v_stb_end_time);
 
     EXCEPTION
         WHEN OTHER THEN
-            UPDATE COMMON.BATCH
-            SET
-                STAGE_TO_BRONZE_STATUS = 'FAILED',
-                STAGE_TO_BRONZE_END_TIME = CURRENT_TIMESTAMP(),
-                STAGE_TO_BRONZE_ERROR = 'STAGE TO BRONZE FAILED'
-            WHERE BATCH_ID = :v_batch_id;
-
-            RETURN 'FAILED AT STAGE → BRONZE | BATCH_ID=' || v_batch_id || ' | ERROR=' || SQLERRM;
+            v_stb_status := 'FAILED';
+            v_stb_error := SQLERRM;
+            v_stb_end_time := CURRENT_TIMESTAMP();
+            v_stb_duration_sec := DATEDIFF(SECOND, v_stb_start_time, v_stb_end_time);
     END;
 
     ------------------------------------------------------------------
     -- STEP 3: BRONZE → SILVER
     ------------------------------------------------------------------
     BEGIN
-        UPDATE COMMON.BATCH
-        SET BRONZE_TO_SILVER_START_TIME = CURRENT_TIMESTAMP()
-        WHERE BATCH_ID = :v_batch_id;
+        v_bts_start_time := CURRENT_TIMESTAMP();
 
-        EXECUTE IMMEDIATE
-            'CALL ' || v_bronze_to_silver_proc || '(?)'
-        USING
-            (v_batch_id);
+        -- Call stored procedure dynamically
+        LET res RESULTSET := (EXECUTE IMMEDIATE 'CALL ' || :v_bronze_to_silver_proc || '(?)' USING (v_batch_id));
+        LET cur CURSOR FOR res;
+        OPEN cur;
+        FETCH cur INTO v_bts_result;
+        CLOSE cur;
 
-        UPDATE COMMON.BATCH
-        SET
-            BRONZE_TO_SILVER_STATUS = 'SUCCESS',
-            BRONZE_TO_SILVER_END_TIME = CURRENT_TIMESTAMP(),
-            BRONZE_TO_SILVER_DURATION_SEC =
-                DATEDIFF(SECOND, BRONZE_TO_SILVER_START_TIME, CURRENT_TIMESTAMP())
-        WHERE BATCH_ID = :v_batch_id;
+        v_bts_status := v_bts_result[0]::VARCHAR;
+        v_s_inserted_records := v_bts_result[1]::INTEGER;
+        v_s_updated_records := v_bts_result[2]::INTEGER;
+        v_bts_end_time := CURRENT_TIMESTAMP();
+        v_bts_duration_sec := DATEDIFF(SECOND, v_bts_start_time, v_bts_end_time);
 
     EXCEPTION
         WHEN OTHER THEN
-            UPDATE COMMON.BATCH
-            SET
-                BRONZE_TO_SILVER_STATUS = 'FAILED',
-                BRONZE_TO_SILVER_END_TIME = CURRENT_TIMESTAMP(),
-                BRONZE_TO_SILVER_ERROR = 'BRONZE TO SILVER FAILED'
-            WHERE BATCH_ID = :v_batch_id;
-
-            RETURN 'FAILED AT BRONZE → SILVER | BATCH_ID=' || :v_batch_id || ' | ERROR=' || SQLERRM;
+            v_bts_status := 'FAILED';
+            v_bts_error := SQLERRM;
+            v_bts_end_time := CURRENT_TIMESTAMP();
+            v_bts_duration_sec := DATEDIFF(SECOND, v_bts_start_time, v_bts_end_time);
     END;
 
     ------------------------------------------------------------------
     -- STEP 4: SILVER → GOLD
     ------------------------------------------------------------------
     BEGIN
-        UPDATE COMMON.BATCH
-        SET SILVER_TO_GOLD_START_TIME = CURRENT_TIMESTAMP()
-        WHERE BATCH_ID = :v_batch_id;
+        v_stg_start_time := CURRENT_TIMESTAMP();
 
-        EXECUTE IMMEDIATE
-            'CALL ' || v_silver_to_gold_proc || '(?)'
-        USING
-            (v_batch_id);
+        -- Call stored procedure dynamically
+        LET res RESULTSET := (EXECUTE IMMEDIATE 'CALL ' || :v_silver_to_gold_proc || '(?)' USING (v_batch_id));
+        LET cur CURSOR FOR res;
+        OPEN cur;
+        FETCH cur INTO v_stg_result;
+        CLOSE cur;
 
-        UPDATE COMMON.BATCH
-        SET
-            SILVER_TO_GOLD_STATUS = 'SUCCESS',
-            SILVER_TO_GOLD_END_TIME = CURRENT_TIMESTAMP(),
-            SILVER_TO_GOLD_DURATION_SEC =
-                DATEDIFF(SECOND, SILVER_TO_GOLD_START_TIME, CURRENT_TIMESTAMP())
-        WHERE BATCH_ID = :v_batch_id;
+        v_stg_status := v_stg_result[0]::VARCHAR;
+        v_g_inserted_records := v_stg_result[1]::INTEGER;
+        v_g_updated_records := v_stg_result[2]::INTEGER;
+        v_g_deleted_records := v_stg_result[3]::INTEGER;
+        v_stg_end_time := CURRENT_TIMESTAMP();
+        v_stg_duration_sec := DATEDIFF(SECOND, v_stg_start_time, v_stg_end_time);
 
     EXCEPTION
         WHEN OTHER THEN
-            UPDATE COMMON.BATCH
-            SET
-                SILVER_TO_GOLD_STATUS = 'FAILED',
-                SILVER_TO_GOLD_END_TIME = CURRENT_TIMESTAMP(),
-                SILVER_TO_GOLD_ERROR = 'SILVER TO GOLD FAILED'
-            WHERE BATCH_ID = :v_batch_id;
-
-            RETURN 'FAILED AT SILVER → GOLD | BATCH_ID=' || :v_batch_id || ' | ERROR=' || SQLERRM;;
+            v_stg_status := 'FAILED';
+            v_stg_error := SQLERRM;
+            v_stg_end_time := CURRENT_TIMESTAMP();
+            v_stg_duration_sec := DATEDIFF(SECOND, v_stg_start_time, v_stg_end_time);
     END;
 
     ------------------------------------------------------------------
     -- STEP 5: FINALIZE
     ------------------------------------------------------------------
-    v_end_time := CURRENT_TIMESTAMP();
+    v_batch_end_time := CURRENT_TIMESTAMP();
 
+    -- UPDATE BATCH TABLE with all execution details
     UPDATE COMMON.BATCH
     SET
-        BATCH_STATUS = 'COMPLETED',
-        OVERALL_END_TIME = :v_end_time,
-        OVERALL_DURATION_SEC =
-            DATEDIFF(SECOND, :v_start_time, :v_end_time)
+        PIPELINE_NAME = :PIPELINE_NAME_PARAM,
+        LAST_BATCH_EXECUTED_AT = :v_last_batch_executed_at,
+
+        -- Stage to Bronze
+        STAGE_TO_BRONZE_STATUS = :v_stb_status,
+        BRONZE_INSERT_RECORDS = :v_b_inserted_records,
+
+        -- Bronze to Silver
+        BRONZE_TO_SILVER_STATUS = :v_bts_status,
+        SILVER_INSERTED = :v_s_inserted_records,
+        SILVER_UPDATED = :v_s_updated_records,
+
+        -- Silver to Gold
+        SILVER_TO_GOLD_STATUS = :v_stg_status,
+        GOLD_INSERTED = :v_g_inserted_records,
+        GOLD_UPDATED = :v_g_updated_records,
+        GOLD_DELETED = :v_g_deleted_records,
+
+        -- Batch Log with all timing and error details
+        BATCH_LOG = OBJECT_CONSTRUCT(
+            'batch_start_time', :v_batch_start_time,
+            'batch_end_time', :v_batch_end_time,
+            'total_duration_sec', DATEDIFF(SECOND, :v_batch_start_time, :v_batch_end_time),
+            'stage_path', :STAGE_PATH_PARAM,
+
+            'stage_to_bronze', OBJECT_CONSTRUCT(
+                'status', :v_stb_status,
+                'start_time', :v_stb_start_time,
+                'end_time', :v_stb_end_time,
+                'duration_sec', :v_stb_duration_sec,
+                'records_inserted', :v_b_inserted_records,
+                'error', :v_stb_error,
+                'procedure_name', :v_stage_to_bronze_proc
+            ),
+
+            'bronze_to_silver', OBJECT_CONSTRUCT(
+                'status', :v_bts_status,
+                'start_time', :v_bts_start_time,
+                'end_time', :v_bts_end_time,
+                'duration_sec', :v_bts_duration_sec,
+                'records_inserted', :v_s_inserted_records,
+                'records_updated', :v_s_updated_records,
+                'error', :v_bts_error,
+                'procedure_name', :v_bronze_to_silver_proc
+            ),
+
+            'silver_to_gold', OBJECT_CONSTRUCT(
+                'status', :v_stg_status,
+                'start_time', :v_stg_start_time,
+                'end_time', :v_stg_end_time,
+                'duration_sec', :v_stg_duration_sec,
+                'records_inserted', :v_g_inserted_records,
+                'records_updated', :v_g_updated_records,
+                'records_deleted', :v_g_deleted_records,
+                'error', :v_stg_error,
+                'procedure_name', :v_silver_to_gold_proc
+            )
+        )
     WHERE BATCH_ID = :v_batch_id;
 
-    RETURN
-        'SUCCESS | BATCH_ID=' || :v_batch_id ||
-        ' | DURATION=' ||
-        DATEDIFF(SECOND, :v_start_time, :v_end_time) || 's';
+    RETURN 'SUCCESS | BATCH_ID=' || :v_batch_id ||
+           ' | STB=' || :v_stb_status ||
+           ' | BTS=' || :v_bts_status ||
+           ' | STG=' || :v_stg_status;
 
 EXCEPTION
     WHEN OTHER THEN
-        UPDATE COMMON.BATCH
-        SET
-            BATCH_STATUS = 'FAILED',
-            OVERALL_END_TIME = CURRENT_TIMESTAMP()
-        WHERE BATCH_ID = :v_batch_id;
+        -- Log critical failure
+        BEGIN
+            UPDATE COMMON.BATCH
+            SET
+                BATCH_LOG = OBJECT_CONSTRUCT(
+                    'critical_error', SQLERRM,
+                    'error_timestamp', CURRENT_TIMESTAMP(),
+                    'batch_start_time', :v_batch_start_time,
+                    'stage_to_bronze_status', :v_stb_status,
+                    'bronze_to_silver_status', :v_bts_status,
+                    'silver_to_gold_status', :v_stg_status
+                )
+            WHERE BATCH_ID = :v_batch_id;
+        EXCEPTION
+            WHEN OTHER THEN
+                NULL;
+        END;
 
         RETURN 'CRITICAL FAILURE | BATCH_ID=' || :v_batch_id || ' | ' || SQLERRM;
 END;

@@ -10,14 +10,14 @@ USE WAREHOUSE ADHOC_WH;
 -- CREATE LOCATION_BRZ
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE BRONZE.LOCATION_BRZ (
-    LOCATION_BRZ_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+    LOCATION_BRZ_ID INTEGER AUTOINCREMENT,
     CITY STRING,
     STATE STRING,
     ZIPCODE STRING,
+    INGEST_RUN_ID INTEGER,
     BATCH_ID VARCHAR(36),
-    CREATED_AT TIMESTAMP_NTZ(9) DEFAULT CURRENT_TIMESTAMP()
-)
-COMMENT = 'THIS IS THE LOCATION STAGE/RAW TABLE WHERE DATA WILL BE COPIED FROM INTERNAL STAGE USING COPY COMMAND. THIS IS AS-IS DATA REPRESETATION FROM THE SOURCE LOCATION. ALL THE COLUMNS ARE TEXT DATA TYPE EXCEPT THE AUDIT COLUMNS THAT ARE ADDED FOR TRACEABILITY.';;
+    CREATED_AT TIMESTAMP_NTZ(9)
+);
 
 -- ----------------------------------------------------------------------------------------------------
 -- CREATING LOCATION_SLV
@@ -61,33 +61,23 @@ CREATE OR REPLACE TABLE GOLD.DIM_LOCATION (
 -- ----------------------------------------------------------------------------------------------------
 -- STAGE TO BRONZE
 -- ----------------------------------------------------------------------------------------------------
-CREATE OR REPLACE TABLE BRONZE.LOCATION_BRZ (
-    LOCATION_BRZ_ID INTEGER AUTOINCREMENT,
-    CITY STRING,
-    STATE STRING,
-    ZIPCODE STRING,
-    INGEST_RUN_ID INTEGER,
-    BATCH_ID VARCHAR(36),
-    CREATED_AT TIMESTAMP_NTZ(9)
-);
-
 CREATE OR REPLACE PROCEDURE SP_LOCATION_STAGE_TO_BRONZE(
     p_batch_id STRING,
     p_file_path STRING
 )
-RETURNS STRING
+RETURNS VARIANT
 LANGUAGE SQL
 AS
 $$
 DECLARE
     v_created_at TIMESTAMP_NTZ(9);
-    v_rows_loaded INTEGER DEFAULT 0;
+    v_rows_inserted INTEGER DEFAULT 0;
 BEGIN
     -- Extract file name from path
     v_created_at := CURRENT_TIMESTAMP();
 
     -- Temp table
-    CREATE OR REPLACE TEMPORARY TABLE temp_menu_load (
+    CREATE OR REPLACE TEMPORARY TABLE BRONZE.TEMP_LOCATION_LOAD (
         CITY STRING,
         STATE STRING,
         ZIPCODE STRING
@@ -96,7 +86,7 @@ BEGIN
     -- Load data from stage
     EXECUTE IMMEDIATE
     '
-        COPY INTO temp_location_load (CITY, STATE, ZIPCODE)
+        COPY INTO TEMP_LOCATION_LOAD (CITY, STATE, ZIPCODE)
         FROM (
             SELECT $1::STRING, $2::STRING, $3::STRING
             FROM ' || p_file_path || '
@@ -116,18 +106,21 @@ BEGIN
         :v_created_at
     FROM temp_location_load;
 
-    v_rows_loaded := SQLROWCOUNT;
+    v_rows_inserted := SQLROWCOUNT;
 
     DROP TABLE BRONZE.TEMP_LOCATION_LOAD;
 
-    RETURN
-        'Successfully loaded ' || v_rows_loaded ||
-        ' rows with batch_id: ' || :p_batch_id;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN
-            'Error occurred: ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted
+        );
 END;
 $$;
 
@@ -140,7 +133,7 @@ $$;
 -- BRONZE TO SILVER
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE SILVER.SP_LOCATION_BRONZE_TO_SILVER(BATCH_ID_PARAM VARCHAR)
-RETURNS STRING
+RETURNS VARIANT
 LANGUAGE SQL
 AS
 $$
@@ -244,25 +237,27 @@ BEGIN
     v_rows_inserted := (SELECT COUNT(*) FROM SILVER.LOCATION_SLV WHERE BATCH_ID = :BATCH_ID_PARAM AND CREATED_AT = UPDATED_AT);
     v_rows_updated := (SELECT COUNT(*) FROM SILVER.LOCATION_SLV WHERE BATCH_ID = :BATCH_ID_PARAM AND CREATED_AT != UPDATED_AT);
 
-    RETURN 'SUCCESS: Inserted ' || v_rows_inserted || ' rows, Updated ' || v_rows_updated || ' rows';
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted,
+            v_rows_updated
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'ERROR: ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted,
+            v_rows_updated
+        );
 END;
 $$;
 
-
-
-
-SELECT * FROM BRONZE.LOCATION_BRZ;
-CALL SILVER.SP_LOCATION_BRONZE_TO_SILVER('fc09119f-bb39-4077-afb8-e1909a623917');
-SELECT * FROM SILVER.LOCATION_SLV;
 -- ----------------------------------------------------------------------------------------------------
 -- SILVER TO GOLD
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE GOLD.SP_LOCATION_SILVER_TO_GOLD(BATCH_ID_PARAM VARCHAR)
-RETURNS STRING
+RETURNS VARIANT
 LANGUAGE SQL
 AS
 $$
@@ -295,7 +290,7 @@ BEGIN
         )
     );
 
-    v_rows_deleted := SQLROWCOUNT;
+    v_rows_updated := SQLROWCOUNT;
 
     -- Step 2: Insert new versions of changed records AND new records
     INSERT INTO GOLD.DIM_LOCATION (
@@ -344,12 +339,23 @@ BEGIN
     );
 
     v_rows_inserted := SQLROWCOUNT;
+    v_rows_updated := (SELECT COUNT(*) FROM SILVER.LOCATION_SLV WHERE BATCH_ID = :BATCH_ID_PARAM AND CREATED_AT != UPDATED_AT);
 
-    RETURN 'SUCCESS: Expired ' || :v_rows_deleted || ' rows, Inserted ' || :v_rows_inserted || ' new versions';
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted,
+            v_rows_updated,
+            v_rows_deleted
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'ERROR: ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted,
+            v_rows_updated,
+            v_rows_deleted
+        );
 END;
 $$;
 -- ====================================================================================================

@@ -69,12 +69,12 @@ CREATE OR REPLACE PROCEDURE BRONZE.SP_DELIVERY_AGENT_STAGE_TO_BRONZE(
     P_BATCH_ID STRING,
     P_FILE_PATH STRING
 )
-RETURNS STRING
+RETURNS VARIANT
 LANGUAGE SQL
 AS
 $$
 DECLARE
-    V_ROWS_LOADED INTEGER DEFAULT 0;
+    v_rows_inserted INTEGER DEFAULT 0;
 BEGIN
     -- CREATE TEMP TABLE
     CREATE OR REPLACE TEMPORARY TABLE TEMP_DELIVERY_AGENT_LOAD(
@@ -131,16 +131,22 @@ BEGIN
     FROM TEMP_DELIVERY_AGENT_LOAD;
 
     -- Get row count
-    SELECT COUNT(*) INTO :V_ROWS_LOADED FROM TEMP_DELIVERY_AGENT_LOAD;
+    SELECT COUNT(*) INTO :v_rows_inserted FROM TEMP_DELIVERY_AGENT_LOAD;
 
     -- Drop temp table
     DROP TABLE IF EXISTS TEMP_DELIVERY_AGENT_LOAD;
 
-    RETURN 'Successfully loaded ' || :V_ROWS_LOADED || ' rows with batch_id: ' || :P_BATCH_ID;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'Error occurred: ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted
+        );
 END;
 $$;
 
@@ -204,12 +210,18 @@ BEGIN
     -- Get merge statistics
     V_ROWS_INSERTED := (SELECT COUNT(*) FROM SILVER.DELIVERY_AGENT_SLV WHERE BATCH_ID = :P_BATCH_ID);
 
-    RETURN 'Successfully merged data. Batch_id: ' || :P_BATCH_ID ||
-           '. Total rows processed: ' || :V_ROWS_INSERTED;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted,
+            v_rows_updated
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'Error occurred: ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted
+        );
 END;
 $$;
 
@@ -225,8 +237,9 @@ AS
 $$
 DECLARE
     V_CURRENT_TIMESTAMP TIMESTAMP;
-    V_ROWS_EXPIRED INTEGER DEFAULT 0;
     V_ROWS_INSERTED INTEGER DEFAULT 0;
+    V_ROWS_UPDATED INTEGER DEFAULT 0;
+    V_ROWS_DELETED INTEGER DEFAULT 0;
 BEGIN
     V_CURRENT_TIMESTAMP := CURRENT_TIMESTAMP();
 
@@ -261,7 +274,7 @@ BEGIN
         );
 
     -- Get count of expired rows
-    V_ROWS_EXPIRED := SQLROWCOUNT;
+    v_rows_deleted := SQLROWCOUNT;
 
     -- Step 2: Insert new records (both brand new and changed records)
     INSERT INTO GOLD.DIM_DELIVERY_AGENT (
@@ -300,40 +313,47 @@ BEGIN
     -- Get count of inserted rows
     V_ROWS_INSERTED := SQLROWCOUNT;
 
-    RETURN 'SCD2 processing completed successfully. Batch_id: ' || :P_BATCH_ID ||
-           '. Rows expired: ' || :V_ROWS_EXPIRED ||
-           '. New rows inserted: ' || :V_ROWS_INSERTED;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted,
+            v_rows_updated,
+            v_rows_deleted
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'Error occurred: ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted,
+            v_rows_updated,
+            v_rows_deleted
+        );
 END;
 $$;
 
 -- =====================================================
 -- EXAMPLE USAGE
 -- =====================================================
--- Query to see history of a specific delivery agent
-SELECT * FROM GOLD.DIM_DELIVERY_AGENT
-WHERE DELIVERY_AGENT_ID = 123
-ORDER BY EFF_START_DATE;
+-- -- Query to see history of a specific delivery agent
+-- SELECT * FROM GOLD.DIM_DELIVERY_AGENT
+-- WHERE DELIVERY_AGENT_ID = 123
+-- ORDER BY EFF_START_DATE;
 
--- Query to see agents whose details changed
-SELECT
-    DELIVERY_AGENT_ID,
-    NAME,
-    PHONE,
-    VEHICLE_TYPE,
-    RATING,
-    EFF_START_DATE,
-    EFF_END_DATE,
-    STATUS
-FROM GOLD.DIM_DELIVERY_AGENT
-WHERE DELIVERY_AGENT_ID IN (
-    SELECT DELIVERY_AGENT_ID
-    FROM GOLD.DIM_DELIVERY_AGENT
-    GROUP BY DELIVERY_AGENT_ID
-    HAVING COUNT(*) > 1
-)
-ORDER BY DELIVERY_AGENT_ID, EFF_START_DATE;
--- ====================================================================================================
+-- -- Query to see agents whose details changed
+-- SELECT
+--     DELIVERY_AGENT_ID,
+--     NAME,
+--     PHONE,
+--     VEHICLE_TYPE,
+--     RATING,
+--     EFF_START_DATE,
+--     EFF_END_DATE,
+--     STATUS
+-- FROM GOLD.DIM_DELIVERY_AGENT
+-- WHERE DELIVERY_AGENT_ID IN (
+--     SELECT DELIVERY_AGENT_ID
+--     FROM GOLD.DIM_DELIVERY_AGENT
+--     GROUP BY DELIVERY_AGENT_ID
+--     HAVING COUNT(*) > 1
+-- )
+-- ORDER BY DELIVERY_AGENT_ID, EFF_START_DATE;

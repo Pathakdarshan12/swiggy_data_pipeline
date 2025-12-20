@@ -72,12 +72,12 @@ CREATE OR REPLACE PROCEDURE BRONZE.SP_CUSTOMER_STAGE_TO_BRONZE(
     P_BATCH_ID STRING,
     P_FILE_PATH STRING
 )
-RETURNS STRING
+RETURNS VARIANT
 LANGUAGE SQL
 AS
 $$
 DECLARE
-    V_ROWS_LOADED INTEGER DEFAULT 0;
+    v_rows_inserted INTEGER DEFAULT 0;
 BEGIN
     -- CREATE TEMP TABLE
     CREATE OR REPLACE TEMPORARY TABLE TEMP_CUSTOMER_LOAD(
@@ -132,16 +132,22 @@ BEGIN
     FROM TEMP_CUSTOMER_LOAD;
 
     -- Get row count
-    SELECT COUNT(*) INTO :V_ROWS_LOADED FROM TEMP_CUSTOMER_LOAD;
+    SELECT COUNT(*) INTO :v_rows_inserted FROM TEMP_CUSTOMER_LOAD;
 
     -- Drop temp table
     DROP TABLE IF EXISTS TEMP_CUSTOMER_LOAD;
 
-    RETURN 'Successfully loaded ' || :V_ROWS_LOADED || ' rows with batch_id: ' || :P_BATCH_ID;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'Error occurred: ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted
+        );
 END;
 $$;
 
@@ -151,7 +157,7 @@ $$;
 CREATE OR REPLACE PROCEDURE SILVER.SP_CUSTOMER_BRONZE_TO_SILVER(
     P_BATCH_ID STRING
 )
-RETURNS STRING
+RETURNS VARIANT
 LANGUAGE SQL
 AS
 $$
@@ -207,12 +213,19 @@ BEGIN
     -- Get merge statistics
     V_ROWS_INSERTED := (SELECT COUNT(*) FROM SILVER.CUSTOMER_SLV WHERE BATCH_ID = :P_BATCH_ID);
 
-    RETURN 'Successfully merged data. Batch_id: ' || :P_BATCH_ID ||
-           '. Total rows processed: ' || :V_ROWS_INSERTED;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted,
+            v_rows_updated
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'Error occurred: ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted,
+            v_rows_updated
+        );
 END;
 $$;
 
@@ -228,8 +241,9 @@ AS
 $$
 DECLARE
     V_CURRENT_TIMESTAMP TIMESTAMP_TZ;
-    V_ROWS_EXPIRED INTEGER DEFAULT 0;
     V_ROWS_INSERTED INTEGER DEFAULT 0;
+    V_ROWS_UPDATED INTEGER DEFAULT 0;
+    V_ROWS_DELETED INTEGER DEFAULT 0;
 BEGIN
     V_CURRENT_TIMESTAMP := CURRENT_TIMESTAMP();
 
@@ -267,7 +281,7 @@ BEGIN
         );
 
     -- Get count of expired rows
-    V_ROWS_EXPIRED := SQLROWCOUNT;
+    V_ROWS_UPDATED := SQLROWCOUNT;
 
     -- Step 2: Insert new records (both brand new and changed records)
     INSERT INTO GOLD.DIM_CUSTOMER (
@@ -311,13 +325,21 @@ BEGIN
     -- Get count of inserted rows
     V_ROWS_INSERTED := SQLROWCOUNT;
 
-    RETURN 'SCD2 processing completed successfully. Batch_id: ' || :P_BATCH_ID ||
-           '. Rows expired: ' || :V_ROWS_EXPIRED ||
-           '. New rows inserted: ' || :V_ROWS_INSERTED;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted,
+            v_rows_updated,
+            v_rows_deleted
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'Error occurred: ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted,
+            v_rows_updated,
+            v_rows_deleted
+        );
 END;
 $$;
 
@@ -325,51 +347,51 @@ $$;
 -- EXAMPLE USAGE
 -- =====================================================
 -- Query to see history of a specific customer
-SELECT * FROM GOLD.DIM_CUSTOMER
-WHERE CUSTOMER_ID = 123
-ORDER BY EFF_START_DT;
+-- SELECT * FROM GOLD.DIM_CUSTOMER
+-- WHERE CUSTOMER_ID = 123
+-- ORDER BY EFF_START_DT;
 
--- Query to see customers with email changes
-SELECT
-    CUSTOMER_ID,
-    NAME,
-    EMAIL,
-    MOBILE,
-    STATUS,
-    EFF_START_DT,
-    EFF_END_DT
-FROM GOLD.DIM_CUSTOMER
-WHERE CUSTOMER_ID IN (
-    SELECT CUSTOMER_ID
-    FROM GOLD.DIM_CUSTOMER
-    GROUP BY CUSTOMER_ID
-    HAVING COUNT(*) > 1
-)
-ORDER BY CUSTOMER_ID, EFF_START_DT;
+-- -- Query to see customers with email changes
+-- SELECT
+--     CUSTOMER_ID,
+--     NAME,
+--     EMAIL,
+--     MOBILE,
+--     STATUS,
+--     EFF_START_DT,
+--     EFF_END_DT
+-- FROM GOLD.DIM_CUSTOMER
+-- WHERE CUSTOMER_ID IN (
+--     SELECT CUSTOMER_ID
+--     FROM GOLD.DIM_CUSTOMER
+--     GROUP BY CUSTOMER_ID
+--     HAVING COUNT(*) > 1
+-- )
+-- ORDER BY CUSTOMER_ID, EFF_START_DT;
 
--- Query to find customers whose preferences changed
-SELECT
-    CUSTOMER_ID,
-    NAME,
-    PREFERENCES,
-    EFF_START_DT,
-    EFF_END_DT,
-    STATUS
-FROM GOLD.DIM_CUSTOMER
-WHERE STATUS = 'INACTIVE'
-    AND EFF_END_DT != '9999-12-31 23:59:59'::TIMESTAMP_TZ
-ORDER BY EFF_END_DT DESC;
+-- -- Query to find customers whose preferences changed
+-- SELECT
+--     CUSTOMER_ID,
+--     NAME,
+--     PREFERENCES,
+--     EFF_START_DT,
+--     EFF_END_DT,
+--     STATUS
+-- FROM GOLD.DIM_CUSTOMER
+-- WHERE STATUS = 'INACTIVE'
+--     AND EFF_END_DT != '9999-12-31 23:59:59'::TIMESTAMP_TZ
+-- ORDER BY EFF_END_DT DESC;
 
--- Query to get current customer count
-SELECT COUNT(*) AS ACTIVE_CUSTOMERS
-FROM GOLD.DIM_CUSTOMER
-WHERE STATUS = 'ACTIVE';
+-- -- Query to get current customer count
+-- SELECT COUNT(*) AS ACTIVE_CUSTOMERS
+-- FROM GOLD.DIM_CUSTOMER
+-- WHERE STATUS = 'ACTIVE';
 
--- Query to audit customer changes by date
-SELECT
-    DATE(EFF_START_DT) AS CHANGE_DATE,
-    COUNT(*) AS NUMBER_OF_CHANGES
-FROM GOLD.DIM_CUSTOMER
-WHERE STATUS = 'INACTIVE'
-GROUP BY DATE(EFF_START_DT)
-ORDER BY CHANGE_DATE DESC;
+-- -- Query to audit customer changes by date
+-- SELECT
+--     DATE(EFF_START_DT) AS CHANGE_DATE,
+--     COUNT(*) AS NUMBER_OF_CHANGES
+-- FROM GOLD.DIM_CUSTOMER
+-- WHERE STATUS = 'INACTIVE'
+-- GROUP BY DATE(EFF_START_DT)
+-- ORDER BY CHANGE_DATE DESC;

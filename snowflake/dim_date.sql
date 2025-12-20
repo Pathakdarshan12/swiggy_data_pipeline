@@ -11,7 +11,7 @@ USE SCHEMA GOLD;
 -- CREATE DIM_DATE
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE GOLD.DIM_DATE (
-    DATE_DIM_HK INTEGER PRIMARY KEY AUTOINCREMENT,   -- SURROGATE KEY FOR DATE DIMENSION
+    DIM_DATE_HK INTEGER PRIMARY KEY AUTOINCREMENT,   -- SURROGATE KEY FOR DATE DIMENSION
     CALENDAR_DATE DATE UNIQUE,                     -- THE ACTUAL CALENDAR DATE
     YEAR NUMBER,                                   -- YEAR
     QUARTER NUMBER,                                -- QUARTER (1-4)
@@ -69,4 +69,3 @@ SELECT
     DAY_OF_THE_MONTH,                       -- DAY OF THE MONTH (1-31)
     DAY_NAME
 FROM MY_DIM_DATE_CTE;
--- ====================================================================================================

@@ -61,14 +61,11 @@ CREATE OR REPLACE TABLE GOLD.DIM_MENU (
     STATUS BOOLEAN                         -- FLAG TO INDICATE IF THE RECORD IS CURRENT (TRUE/FALSE)
 )
 COMMENT = 'THIS TABLE STORES THE DIMENSION DATA FOR THE MENU ITEMS, TRACKING HISTORICAL CHANGES USING SCD TYPE 2. EACH MENU ITEM HAS AN EFFECTIVE START AND END DATE, WITH A FLAG INDICATING IF IT IS THE CURRENT RECORD OR HISTORICAL. THE HASH KEY (MENU_DIM_HK) IS GENERATED BASED ON MENU_ID AND RESTAURANT_ID.';
-
-DESC TABLE BRONZE.MENU_BRZ;
-
 -- ----------------------------------------------------------------------------------------------------
 -- STAGE TO BRONZE
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE BRONZE.SP_MENU_STAGE_TO_BRONZE(p_batch_id STRING, p_file_path STRING)
-RETURNS STRING
+RETURNS VARIANT
 LANGUAGE SQL
 AS
 $$
@@ -120,16 +117,20 @@ BEGIN
 
     v_rows_inserted := SQLROWCOUNT;
     DROP TABLE TEMP_MENU_LOAD;
-    RETURN 'SUCCESS | Rows loaded: ' || :v_rows_inserted || ' | Batch ID: ' || :p_batch_id;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'FAILED | Batch ID: ' || p_batch_id || ' | Error Occured:' || SQLERRM ;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted
+        );
 END;
 $$;
 
-CALL BRONZE.SP_MENU_STAGE_TO_BRONZE('123', '@"SWIGGY"."BRONZE"."CSV_STG"/menu/menu_03-01-2025.csv');
-SELECT * FROM MENU_BRZ;
 -- ----------------------------------------------------------------------------------------------------
 -- BRONZE TO SILVER
 -- ----------------------------------------------------------------------------------------------------
@@ -225,16 +226,21 @@ BEGIN
           AND CREATED_AT <> UPDATED_AT
     );
 
-    RETURN 'SUCCESS | Inserted=' || :v_rows_inserted || ', Updated=' || :v_rows_updated;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted,
+            v_rows_updated
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'FAILED | Batch=' || p_batch_id || ' | Error:' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted,
+            v_rows_updated
+        );
 END;
 $$;
-
-
-CALL SILVER.SP_MENU_BRONZE_TO_SILVER('123');
 
 -- ----------------------------------------------------------------------------------------------------
 -- SILVER TO GOLD
@@ -248,6 +254,7 @@ $$
 DECLARE
     v_rows_inserted INTEGER DEFAULT 0;
     v_rows_updated  INTEGER DEFAULT 0;
+    v_rows_deleted  INTEGER DEFAULT 0;
 BEGIN
 
     -- STEP 1: CLOSE EXISTING ACTIVE RECORDS (SCD2 UPDATE)
@@ -317,11 +324,20 @@ BEGIN
 
     v_rows_inserted := SQLROWCOUNT;
 
-    RETURN 'SUCCESS | Inserted: ' || v_rows_inserted || ' | Updated: ' || v_rows_updated;
+    RETURN ARRAY_CONSTRUCT(
+            'SUCCESSFUL',
+            v_rows_inserted,
+            v_rows_updated,
+            v_rows_deleted
+        );
 
 EXCEPTION
     WHEN OTHER THEN
-        RETURN 'FAILED | ' || SQLERRM;
+        RETURN ARRAY_CONSTRUCT(
+            'FAILED',
+            v_rows_inserted,
+            v_rows_updated,
+            v_rows_deleted
+        );
 END;
 $$;
--- ====================================================================================================
