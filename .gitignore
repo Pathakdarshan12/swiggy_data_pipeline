@@ -15,7 +15,9 @@ __pycache__/
 /venv/Scripts/
 .env
 /venv/Scripts/dotenv.exe
-delivery-connector.json
-orders-connector.json
+/delivery-connector.json
+/orders-connector.json
 /snowflake_key.p8
 /snowflake_key.pub
+/snowflake_private_key.p8
+/snowflake_public_key.pub
