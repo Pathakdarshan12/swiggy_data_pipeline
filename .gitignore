@@ -1,41 +1,66 @@
-/logs/dbt.log
-/venv/
-/.env
+# =====================================================
+# Python / Virtual Environments
+# =====================================================
 venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# =====================================================
+# Environment & Secrets
+# =====================================================
+.env
+.env.*
+*.env
+
+# =====================================================
+# Logs
+# =====================================================
+*.log
+logs/
+dbt.log
+
+# =====================================================
+# dbt Artifacts
+# =====================================================
 datavelocity_dbt/target/
 datavelocity_dbt/logs/
 datavelocity_dbt/dbt_packages/
 datavelocity_dbt/dbt_internal_packages/
+
+# =====================================================
+# IDE / Editor
+# =====================================================
 .idea/
 .vscode/
-*.pyc
-__pycache__/
-*.log
-/venv/Scripts/*
-/venv/Scripts/
-.env
-/venv/Scripts/dotenv.exe
-streaming/delivery-connector.json
-streaming/orders-connector.json
-/snowflake_key.p8
-/snowflake_key.pub
-/snowflake_private_key.p8
-/snowflake_public_key.pub
-/streaming/order-items-connector.json
 
-# Cryptographic keys
+# =====================================================
+# OS / Tooling
+# =====================================================
+.DS_Store
+Thumbs.db
+
+# =====================================================
+# Cryptographic Keys (ABSOLUTE BLOCK)
+# =====================================================
 *.p8
 *.pem
 *.key
 *.der
 *.crt
-*.gitkeep
-# Snowflake RSA keys
+
+# =====================================================
+# Snowflake RSA Keys (Explicit)
+# =====================================================
 snowflake_key.p8
-snowflake_private_key.p8
-snowflake_public_key.pub
 snowflake_key.pub
 
-# Connector configs (contain secrets)
+# =====================================================
+# Kafka / Connector Configs (Secrets)
+# =====================================================
 *-connector.json
+
+# Allow safe templates
 !*-connector.template.json
+/LinkedIn.txt

@@ -6,39 +6,95 @@ A production-grade data platform implementing medallion architecture (Bronze →
 
 DataVelocity processes food delivery transaction data through a three-tier medallion architecture on Snowflake, supporting both batch and streaming ingestion patterns. The platform handles ~10 entities with full historical tracking, data quality enforcement, and real-time event processing via Kafka.
 
-```
-┌─────────────────┐
-│  Data Sources   │
-│  - CSV Files    │
-│  - Kafka Topics │
-└────────┬────────┘
-         │
-    ┌────▼─────────────────────────────────────┐
-    │         BRONZE LAYER                     │
-    │  - Raw data ingestion                    │
-    │  - Schema-on-read with type conversion   │
-    │  - Audit columns (ingest_run_id, etc.)   │
-    └────┬─────────────────────────────────────┘
-         │
-         │  Data Quality Validation
-         │  (SP_EXECUTE_DATA_QUALITY_VALIDATION)
-         │
-    ┌────▼─────────────────────────────────────┐
-    │         SILVER LAYER                     │
-    │  - Cleansed & validated data             │
-    │  - Business key enforcement              │
-    │  - MERGE operations (upsert logic)       │
-    └────┬─────────────────────────────────────┘
-         │
-         │  SCD Type 2 Processing
-         │  (Hash-based change detection)
-         │
-    ┌────▼─────────────────────────────────────┐
-    │         GOLD LAYER                       │
-    │  - Dimensional models (SCD2)             │
-    │  - Fact tables (append-only/status)      │
-    │  - Analytical aggregations (MART)        │
-    └──────────────────────────────────────────┘
+[//]: # (```)
+
+[//]: # (┌────────────────────────────────────────────────────────────────────────────┐)
+
+[//]: # (│                                                                            │)
+
+[//]: # (│        Batch Layer                          Speed Layer                    │)
+
+[//]: # (│        &#40;CSV Files&#41;                        &#40;Kafka Events&#41;                   │)
+
+[//]: # (│   AWS S3 &#40;External Stage&#41;        Stream Tables → Stream CDC                │)
+
+[//]: # (│            │                                 │                             │)
+
+[//]: # (│            ▼                                 ▼                             │)
+
+[//]: # (│   ┌────────────────────────────────────────────────────────────────────┐   │)
+
+[//]: # (│   │                           BRONZE LAYER                             │   │)
+
+[//]: # (│   │   - Raw data ingestion                                             │   │)
+
+[//]: # (│   │   - Schema-on-read with type conversion                            │   │)
+
+[//]: # (│   │   - Audit columns &#40;ingest_run_id, etc.&#41;                            │   │)
+
+[//]: # (│   └───────────────┬────────────────────────────────────────────────────┘   │)
+
+[//]: # (│                   │                                                        │)
+
+[//]: # (│                   │  Data Quality Validation                               │)
+
+[//]: # (│                   │  &#40;SP_EXECUTE_DATA_QUALITY_VALIDATION&#41;                  │)
+
+[//]: # (│                   │                                                        │)
+
+[//]: # (│   ┌───────────────▼────────────────────────────────────────────────────┐   │)
+
+[//]: # (│   │                           SILVER LAYER                             │   │)
+
+[//]: # (│   │   - Cleansed & validated data                                      │   │)
+
+[//]: # (│   │   - Business key enforcement                                       │   │)
+
+[//]: # (│   │   - MERGE operations &#40;upsert logic&#41;                                │   │)
+
+[//]: # (│   └───────────────┬────────────────────────────────────────────────────┘   │)
+
+[//]: # (│                   │                                                        │)
+
+[//]: # (│                   │  SCD Type 2 Processing                                 │)
+
+[//]: # (│                   │  &#40;Hash-based change detection&#41;                         │)
+
+[//]: # (│                   │                                                        │)
+
+[//]: # (│   ┌───────────────▼────────────────────────────────────────────────────┐   │)
+
+[//]: # (│   │                            GOLD LAYER                              │   │)
+
+[//]: # (│   │   - Dimensional models &#40;SCD Type 2&#41;                                │   │)
+
+[//]: # (│   │   - Fact tables &#40;append-only / status-based&#41;                       │   │)
+
+[//]: # (│   │   - Analytical aggregations &#40;Data Marts&#41;                           │   │)
+
+[//]: # (│   └────────────────────────────────────────────────────────────────────┘   │)
+
+[//]: # (│                                                                            │)
+
+[//]: # (│   Key Metrics:                                                             │)
+
+[//]: # (│   • Sub-15 second streaming latency                                        │)
+
+[//]: # (│   • ~2 second batch processing &#40;5k rows&#41;                                   │)
+
+[//]: # (│   • Zero data loss                                                         │)
+
+[//]: # (│   • Complete audit trail                                                   │)
+
+[//]: # (│                                                                            │)
+
+[//]: # (└────────────────────────────────────────────────────────────────────────────┘)
+
+[//]: # ()
+[//]: # (```)
+
+```mermaid
+%% include: docs/architecture.mmd
 ```
 
 ## Technical Stack
@@ -90,6 +146,8 @@ datavelocity/
 ## Core Design Decisions
 
 ### 1. Medallion Architecture Implementation
+
+
 
 **Bronze Layer**:
 - Stores raw data with minimal transformation (type casting only)
