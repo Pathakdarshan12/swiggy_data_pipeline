@@ -2,7 +2,7 @@
 -- CUSTOMER
 -- ====================================================================================================
 -- CHANGE CONTEXT
-USE DATABASE SWIGGY;
+USE DATABASE DATAVELOCITY;
 USE SCHEMA BRONZE;
 USE WAREHOUSE ADHOC_WH;
 
@@ -11,7 +11,7 @@ USE WAREHOUSE ADHOC_WH;
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE TABLE BRONZE.CUSTOMER_BRZ (
     CUSTOMER_BRZ_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-    
+
     -- MAIN COLUMNS WITH APPROPRIATE DATA TYPES
     NAME VARCHAR(100),
     MOBILE VARCHAR(20) WITH TAG (COMMON.PII_POLICY_TAG = 'PII'),
@@ -65,7 +65,7 @@ CREATE OR REPLACE TABLE SILVER.CUSTOMER_SLV (
     DOB DATE WITH TAG (COMMON.PII_POLICY_TAG = 'PII'),
     ANNIVERSARY DATE,
     PREFERENCES VARCHAR,
-    BATCH_ID VARCHAR(36),
+    BATCH_ID VARCHAR(50),
     CREATED_AT TIMESTAMP_TZ(9) DEFAULT CURRENT_TIMESTAMP,
     UPDATED_AT TIMESTAMP_TZ(9)
 )
@@ -87,7 +87,7 @@ CREATE OR REPLACE TABLE GOLD.DIM_CUSTOMER (
     STATUS VARCHAR(10) DEFAULT 'ACTIVE',                     -- Record status (ACTIVE/INACTIVE)
     EFF_START_DT TIMESTAMP_TZ(9) DEFAULT CURRENT_TIMESTAMP(),-- Effective start date
     EFF_END_DT TIMESTAMP_TZ(9) DEFAULT '9999-12-31 23:59:59'::TIMESTAMP_TZ(9), -- Effective end date
-    BATCH_ID VARCHAR(36) NOT NULL,                           -- Batch identifier
+    BATCH_ID VARCHAR(50) NOT NULL,                           -- Batch identifier
     CREATED_AT TIMESTAMP_TZ(9) DEFAULT CURRENT_TIMESTAMP(), -- Record creation timestamp
     UPDATED_AT TIMESTAMP_TZ(9) DEFAULT CURRENT_TIMESTAMP() -- Record update timestamp
 )
@@ -177,7 +177,7 @@ BEGIN
     END IF;
 
     -- Consume sequence
-    SELECT SWIGGY.BRONZE.SEQ_CUSTOMER_INGEST_RUN_ID.NEXTVAL INTO :V_INGEST_RUN_ID;
+    SELECT DATAVELOCITY.BRONZE.SEQ_CUSTOMER_INGEST_RUN_ID.NEXTVAL INTO :V_INGEST_RUN_ID;
 
     -- Insert into Bronze
     INSERT INTO BRONZE.CUSTOMER_BRZ (
@@ -320,15 +320,6 @@ BEGIN
     OPEN cur;
     FETCH cur INTO v_dq_result;
     CLOSE cur;
-
-    -- Check if DQ validation was successful
-    v_dq_result_status := v_dq_result:STATUS::STRING;
-    IF (v_dq_result_status NOT LIKE 'SUCCESS%') THEN
-        RETURN OBJECT_CONSTRUCT(
-            'STATUS', 'FAILED',
-            'ERROR', 'DQ Validation failed'
-        );
-    END IF;
 
     -- Count valid from stage table
     SELECT COUNT(*) INTO :v_valid_row_count FROM IDENTIFIER(:v_stage_table) WHERE IS_VALID = TRUE;

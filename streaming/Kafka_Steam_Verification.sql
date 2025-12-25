@@ -2,7 +2,7 @@
 -- VERIFICATION QUERIES
 -- =====================================================
 USE ROLE ACCOUNTADMIN;
-USE DATABASE SWIGGY;
+USE DATABASE DATAVELOCITY;
 USE WAREHOUSE ADHOC_WH;
 
 -- =====================================================
@@ -10,7 +10,7 @@ USE WAREHOUSE ADHOC_WH;
 -- =====================================================
 
 -- Orders in Silver
-SELECT 
+SELECT
     COUNT(*) AS total_records,
     COUNT(DISTINCT ORDER_ID) AS unique_orders,
     MIN(INGESTED_AT) AS first_record,
@@ -19,7 +19,7 @@ SELECT
 FROM SILVER.ORDERS_STREAM_SLV;
 
 -- Sample order data
-SELECT 
+SELECT
     ORDER_ID,
     EVENT_TYPE,
     STATUS,
@@ -31,7 +31,7 @@ ORDER BY INGESTED_AT DESC
 LIMIT 10;
 
 -- Order Items in Silver
-SELECT 
+SELECT
     COUNT(*) AS total_records,
     COUNT(DISTINCT ORDER_ITEM_ID) AS unique_items,
     COUNT(DISTINCT ORDER_ID) AS unique_orders,
@@ -40,7 +40,7 @@ SELECT
 FROM SILVER.ORDER_ITEMS_STREAM_SLV;
 
 -- Delivery in Silver
-SELECT 
+SELECT
     COUNT(*) AS total_records,
     COUNT(DISTINCT DELIVERY_ID) AS unique_deliveries,
     MIN(INGESTED_AT) AS first_record,
@@ -52,21 +52,21 @@ FROM SILVER.DELIVERY_STREAM_SLV;
 -- =====================================================
 
 -- Check if streams have data
-SELECT 
+SELECT
     'STREAM_ORDERS_CHANGES' AS stream_name,
-    SYSTEM$STREAM_HAS_DATA('STREAM_ORDERS_CHANGES') AS has_data;
+    SYSTEM$STREAM_HAS_DATA('BRONZE.STREAM_ORDERS_CHANGES') AS has_data;
 
-SELECT 
+SELECT
     'STREAM_ORDER_ITEMS_CHANGES' AS stream_name,
     SYSTEM$STREAM_HAS_DATA('STREAM_ORDER_ITEMS_CHANGES') AS has_data;
 
-SELECT 
+SELECT
     'STREAM_DELIVERY_CHANGES' AS stream_name,
     SYSTEM$STREAM_HAS_DATA('STREAM_DELIVERY_CHANGES') AS has_data;
 
 -- View pending changes in streams
-SELECT COUNT(*) AS pending_orders 
-FROM STREAM_ORDERS_CHANGES;
+SELECT COUNT(*) AS pending_orders
+FROM BRONZE.STREAM_ORDERS_CHANGES;
 
 SELECT COUNT(*) AS pending_items 
 FROM STREAM_ORDER_ITEMS_CHANGES;

@@ -2,7 +2,7 @@
 -- CUSTOMER_ADDRESS
 -- ====================================================================================================
 -- CHANGE CONSTRING(100)
-USE DATABASE SWIGGY;
+USE DATABASE DATAVELOCITY;
 USE SCHEMA BRONZE;
 USE WAREHOUSE ADHOC_WH;
 -- ----------------------------------------------------------------------------------------------------
@@ -81,7 +81,7 @@ CREATE OR REPLACE TABLE SILVER.CUSTOMER_ADDRESS_SLV (
     ADDRESS_TYPE VARCHAR,
 
     -- AUDIT COLUMNS
-    BATCH_ID VARCHAR(36),
+    BATCH_ID VARCHAR(50),
     CREATED_AT TIMESTAMP_TZ,
     UPDATED_AT TIMESTAMP_TZ
 
@@ -210,7 +210,7 @@ BEGIN
     END IF;
 
     -- Consume sequence
-    SELECT SWIGGY.BRONZE.SEQ_CUSTOMER_ADDRESS_INGEST_RUN_ID.NEXTVAL INTO :V_INGEST_RUN_ID;
+    SELECT DATAVELOCITY.BRONZE.SEQ_CUSTOMER_ADDRESS_INGEST_RUN_ID.NEXTVAL INTO :V_INGEST_RUN_ID;
 
     -- Insert into bronze table
     INSERT INTO BRONZE.CUSTOMER_ADDRESS_BRZ (

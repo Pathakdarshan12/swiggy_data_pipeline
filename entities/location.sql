@@ -2,7 +2,7 @@
 -- Location
 -- ====================================================================================================
 -- CHANGE_CONTEXT
-USE DATABASE SWIGGY;
+USE DATABASE DATAVELOCITY;
 USE SCHEMA BRONZE;
 USE WAREHOUSE ADHOC_WH;
 -- ====================================================================================================
@@ -151,7 +151,7 @@ BEGIN
     END IF;
 
     -- Consume sequence
-    SELECT SWIGGY.BRONZE.SEQ_LOCATION_INGEST_RUN_ID.NEXTVAL INTO :V_INGEST_RUN_ID;
+    SELECT DATAVELOCITY.BRONZE.SEQ_LOCATION_INGEST_RUN_ID.NEXTVAL INTO :V_INGEST_RUN_ID;
 
     -- Insert into bronze table
     INSERT INTO BRONZE.LOCATION_BRZ (

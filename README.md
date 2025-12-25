@@ -395,7 +395,7 @@ SELECT * FROM COMMON.VW_TASK_EXECUTION_STATUS;
 
 ```sql
 -- 1. Create infrastructure
-@setup/setup_swiggy_pipeline.sql
+@setup/setup_datavelocity_pipeline.sql
 
 -- 2. Deploy entities (in dependency order)
 @entities/location.sql
@@ -414,8 +414,14 @@ SELECT * FROM COMMON.VW_TASK_EXECUTION_STATUS;
 -- 4. Deploy orchestration
 @orchestration/import_master_procedure.sql
 
+-- 5. Analytics
+@analytics/dim_date.sql
+@analytics/mart_orders.sql
+
+
 -- 5. (Optional) Setup streaming
 @streaming/Kafka_Streaming_Setup.sql
+@streaming/Kafka_Tables_Streams_Procedure_Task_Setup.sql
 @streaming/Kafka_Tables_Streams_Procedure_Task_Setup.sql
 ```
 

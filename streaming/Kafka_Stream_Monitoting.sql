@@ -2,7 +2,7 @@
 -- MONITORING DASHBOARD
 -- =====================================================
 USE ROLE ACCOUNTADMIN;
-USE DATABASE SWIGGY;
+USE DATABASE DATAVELOCITY;
 USE SCHEMA GOLD;
 USE WAREHOUSE ADHOC_WH;
 
@@ -10,23 +10,23 @@ USE WAREHOUSE ADHOC_WH;
 -- 1. PIPELINE HEALTH CHECK
 -- =====================================================
 CREATE OR REPLACE VIEW COMMON.VW_STREAMING_PIPELINE_HEALTH AS
-SELECT 
+SELECT
     'Kafka Topics' AS component,
     'N/A' AS status,
     'Check Confluent Control Center' AS details
 UNION ALL
-SELECT 
+SELECT
     'Silver Tables',
-    CASE 
+    CASE
         WHEN COUNT(*) > 0 THEN '✓ Active'
         ELSE '✗ No Data'
     END,
     'Last ingested: ' || MAX(INGESTED_AT)::STRING
 FROM SILVER.ORDERS_STREAM_SLV
 UNION ALL
-SELECT 
+SELECT
     'Snowflake Streams',
-    CASE 
+    CASE
         WHEN SYSTEM$STREAM_HAS_DATA('SILVER.STREAM_ORDERS_CHANGES') THEN '⚠ Pending Data'
         ELSE '✓ Up to Date'
     END,
@@ -129,6 +129,7 @@ WHERE NAME LIKE 'TASK_%_STREAM_TO_GOLD'
 ORDER BY SCHEDULED_TIME DESC;
 
 SELECT * FROM COMMON.VW_TASK_EXECUTION_STATUS;
+select current_timestamp();
 
 -- =====================================================
 -- 5. ERROR MONITORING
