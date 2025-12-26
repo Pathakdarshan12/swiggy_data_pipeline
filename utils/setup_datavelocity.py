@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 from typing import List, Dict, Optional
 from utils.snowflake_connector import SnowflakeConnection
-
+from utils.logger import setup_logger
 
 class SQLScriptExecutor:
     """Robust SQL script executor with logging, error handling, and rollback"""

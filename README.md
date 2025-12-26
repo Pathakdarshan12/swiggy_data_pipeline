@@ -49,6 +49,7 @@ DataVelocity processes food delivery transaction data through a three-tier medal
 │                                                                            │
 └────────────────────────────────────────────────────────────────────────────┘
 ```
+![Medallion Architecture](docs/images/architecture.png)
 
 ## Technical Stack
 
