@@ -2,7 +2,6 @@ import snowflake.connector
 from snowflake.connector import DictCursor
 import os
 from contextlib import contextmanager
-from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 
 # Load environment variables from .env file

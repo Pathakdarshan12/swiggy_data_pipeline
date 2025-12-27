@@ -7,6 +7,7 @@ USE WAREHOUSE ADHOC_WH;
 USE DATABASE DATAVELOCITY;
 USE SCHEMA GOLD;
 
+-- /*TODO: Create DIM_DATE dbt schema*/
 -- ----------------------------------------------------------------------------------------------------
 -- CREATE DIM_DATE
 -- ----------------------------------------------------------------------------------------------------
@@ -44,7 +45,6 @@ WITH RECURSIVE MY_DIM_DATE_CTE AS
      -- RECURSIVE CLAUSE
     SELECT
         DATEADD('DAY', -1, TODAY) AS TODAY_R,
-        YEAR(TODAY_R) AS YEAR,
         QUARTER(TODAY_R) AS QUARTER,
         MONTH(TODAY_R) AS MONTH,
         WEEK(TODAY_R) AS WEEK,

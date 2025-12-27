@@ -1,7 +1,6 @@
 import os
 import time
 from datetime import datetime
-from typing import List, Dict, Optional
 from utils.snowflake_connector import SnowflakeConnection
 from utils.logger import setup_logger
 
@@ -343,10 +342,6 @@ def run_datavelocity_pipeline():
         # {
         #     'file': 'analytics/dim_date.sql',
         #     'description': '📅 Deploy Date Dimension'
-        # },
-        # {
-        #     'file': 'analytics/mart_orders.sql',
-        #     'description': '📊 Deploy Orders Mart'
         # },
         #
         # # 6. Streaming (Optional)
