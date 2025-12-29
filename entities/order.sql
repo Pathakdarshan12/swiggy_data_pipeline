@@ -15,7 +15,7 @@ CREATE OR REPLACE TABLE BRONZE.ORDER_BRZ (
     RESTAURANT_ID INTEGER COMMENT 'RESTAURANT FK(SOURCE SYSTEM)',
     ORDER_DATE DATE,
     TOTAL_AMOUNT NUMBER(10, 2),
-    STATUS VARCHAR,
+    ORDER_STATUS VARCHAR(20),
     PAYMENT_METHOD VARCHAR,
 
     -- RAW_COLUMNS
@@ -23,7 +23,7 @@ CREATE OR REPLACE TABLE BRONZE.ORDER_BRZ (
     RESTAURANT_ID_RAW VARCHAR,
     ORDER_DATE_RAW VARCHAR,
     TOTAL_AMOUNT_RAW VARCHAR,
-    STATUS_RAW VARCHAR,
+    ORDER_STATUS_RAW VARCHAR,
     PAYMENT_METHOD_RAW VARCHAR,
 
     -- AUDIT COLUMNS
@@ -34,7 +34,18 @@ CREATE OR REPLACE TABLE BRONZE.ORDER_BRZ (
 ALTER TABLE BRONZE.ORDER_BRZ CLUSTER BY (INGEST_RUN_ID);
 
 -- CREATING SEQUNCE TO GENERATE INGEST_RUN_ID
-CREATE OR REPLACE SEQUENCE SEQ_ORDER_INGEST_RUN_ID START = 1 INCREMENT = 1;
+CREATE OR REPLACE SEQUENCE BRONZE.SEQ_ORDER_INGEST_RUN_ID START = 1 INCREMENT = 1;
+
+-- ----------------------------------------------------------------------------------------------------
+-- CREATE ORDER_LOAD_ERROR
+-- ----------------------------------------------------------------------------------------------------
+CREATE OR REPLACE TABLE BRONZE.ORDER_LOAD_ERROR(
+    ERROR_ID INTEGER PRIMARY KEY,
+    VALIDATE_COLUMN VARCHAR(50),
+    VALIDATION_TYPE VARCHAR(30),
+    VALIDATION_ERROR_MSG VARCHAR(200),
+    INGEST_RUN_ID INTEGER
+);
 
 -- --------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- CREATE ORDER_SLV
@@ -45,7 +56,7 @@ CREATE OR REPLACE TABLE SILVER.ORDER_SLV (
     RESTAURANT_ID INTEGER COMMENT 'RESTAURANT FK(SOURCE SYSTEM)',
     ORDER_DATE TIMESTAMP_TZ,
     TOTAL_AMOUNT NUMBER(10, 2),
-    STATUS STRING(50),
+    ORDER_STATUS VARCHAR(20),
     PAYMENT_METHOD STRING(50),
 
     -- AUDIT COLUMNS
@@ -63,28 +74,29 @@ CREATE OR REPLACE TABLE GOLD.FACT_ORDER (
     RESTAURANT_ID INTEGER COMMENT 'RESTAURANT FK(SOURCE SYSTEM)',
     ORDER_DATE TIMESTAMP_TZ,
     TOTAL_AMOUNT NUMBER(10, 2),
-    CURRENT_STATUS STRING(50),
-    INITIAL_STATUS STRING(50),
+    ORDER_STATUS VARCHAR(20),
     PAYMENT_METHOD STRING(50),
-    STATUS_UPDATED_AT TIMESTAMP_TZ,
+    STATUS VARCHAR DEFAULT 'ACTIVE',
+    EFF_START_DT TIMESTAMP_TZ,
+    EFF_END_DT TIMESTAMP_TZ,
     BATCH_ID VARCHAR,
     CREATED_AT TIMESTAMP_TZ,
     UPDATED_AT TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP()
 )
-COMMENT = 'FACT TABLE FOR ORDER WITH STATUS TRACKING';
+COMMENT = 'FACT TABLE FOR ORDER WITH ORDER_STATUS TRACKING';
 
 -- --------------------------------------------------------------------------------------------------------------------------------------------------------------
--- STATUS HISTORY TABLES (DETAILED AUDIT TRAIL)
+-- ORDER_STATUS HISTORY TABLES (DETAILED AUDIT TRAIL)
 -- --------------------------------------------------------------------------------------------------------------------------------------------------------------
-CREATE OR REPLACE TABLE GOLD.FACT_ORDER_STATUS_HISTORY (
-    STATUS_HISTORY_KEY INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE OR REPLACE TABLE GOLD.FACT_ORDER_ORDER_STATUS_HISTORY (
+    ORDER_STATUS_HISTORY_KEY INTEGER PRIMARY KEY AUTOINCREMENT,
     ORDER_ID VARCHAR,  -- Changed from INTEGER to VARCHAR to match FACT_ORDER
-    OLD_STATUS STRING(50),
-    NEW_STATUS STRING(50),
-    STATUS_CHANGED_AT TIMESTAMP_TZ,
+    OLD_ORDER_STATUS VARCHAR(20),
+    NEW_ORDER_STATUS VARCHAR(20),
+    ORDER_STATUS_CHANGED_AT TIMESTAMP_TZ,
     BATCH_ID VARCHAR
 )
-COMMENT = 'AUDIT TRAIL FOR ORDER STATUS CHANGES';
+COMMENT = 'AUDIT TRAIL FOR ORDER_STATUS CHANGES';
 
 -- ----------------------------------------------------------------------------------------------------
 -- PROCEDURE: ORDER STAGE TO BRONZE
@@ -131,7 +143,7 @@ BEGIN
         RESTAURANT_ID VARCHAR,
         ORDER_DATE VARCHAR,
         TOTAL_AMOUNT VARCHAR,
-        STATUS VARCHAR,
+        ORDER_STATUS VARCHAR,
         PAYMENT_METHOD VARCHAR
     );
 
@@ -143,7 +155,7 @@ BEGIN
         EXECUTE IMMEDIATE
         'COPY INTO TEMP_ORDER_LOAD (
             CUSTOMER_ID, RESTAURANT_ID, ORDER_DATE,
-            TOTAL_AMOUNT, STATUS, PAYMENT_METHOD
+            TOTAL_AMOUNT, ORDER_STATUS, PAYMENT_METHOD
         )
         FROM (
             SELECT
@@ -151,7 +163,7 @@ BEGIN
                 $2::STRING AS RESTAURANT_ID,
                 $3::STRING AS ORDER_DATE,
                 $4::STRING AS TOTAL_AMOUNT,
-                $5::STRING AS STATUS,
+                $5::STRING AS ORDER_STATUS,
                 $6::STRING AS PAYMENT_METHOD
             FROM ' || V_FILE_PATH || '
         )
@@ -165,14 +177,14 @@ BEGIN
 
         INSERT INTO TEMP_ORDER_LOAD (
             CUSTOMER_ID, RESTAURANT_ID, ORDER_DATE,
-            TOTAL_AMOUNT, STATUS, PAYMENT_METHOD
+            TOTAL_AMOUNT, ORDER_STATUS, PAYMENT_METHOD
         )
         SELECT
             RECORD_CONTENT:customer_id::VARCHAR AS CUSTOMER_ID,
             RECORD_CONTENT:restaurant_id::INTEGER AS RESTAURANT_ID,
             RECORD_CONTENT:order_date::TIMESTAMP_TZ AS ORDER_DATE,
             RECORD_CONTENT:total_amount::NUMBER(10,2) AS TOTAL_AMOUNT,
-            RECORD_CONTENT:status::VARCHAR AS STATUS,
+            RECORD_CONTENT:ORDER_STATUS::VARCHAR AS ORDER_STATUS,
             RECORD_CONTENT:payment_method::VARCHAR AS PAYMENT_METHOD
         FROM BRONZE.STREAM_ORDERS_CHANGES
         WHERE RECORD_CONTENT:order_id IS NOT NULL
@@ -187,7 +199,7 @@ BEGIN
         ROLLBACK;
         DROP TABLE IF EXISTS TEMP_ORDER_LOAD;
         RETURN OBJECT_CONSTRUCT(
-            'STATUS', 'FAILED',
+            'ORDER_STATUS', 'FAILED',
             'ERROR', 'Invalid SOURCE_TYPE. Must be FILE or STREAM',
             'SOURCE_TYPE', P_SOURCE_TYPE,
             'ROWS_INSERTED', 0,
@@ -203,7 +215,7 @@ BEGIN
         ROLLBACK;
         DROP TABLE IF EXISTS TEMP_ORDER_LOAD;
         RETURN OBJECT_CONSTRUCT(
-            'STATUS', 'FAILED',
+            'ORDER_STATUS', 'FAILED',
             'ERROR', 'No records loaded from ' || V_SOURCE_TYPE_UPPER,
             'SOURCE_TYPE', V_SOURCE_TYPE_UPPER,
             'FILE_PATH', V_FILE_PATH,
@@ -212,11 +224,12 @@ BEGIN
         );
     END IF;
 
+
     -- SINGLE INSERT: Load from temp table to bronze (works for both FILE and STREAM)
     INSERT INTO BRONZE.ORDER_BRZ (
         ORDER_ID, CUSTOMER_ID, RESTAURANT_ID, ORDER_DATE, TOTAL_AMOUNT,
-        STATUS, PAYMENT_METHOD, CUSTOMER_ID_RAW, RESTAURANT_ID_RAW,
-        ORDER_DATE_RAW, TOTAL_AMOUNT_RAW, STATUS_RAW, PAYMENT_METHOD_RAW,
+        ORDER_STATUS, PAYMENT_METHOD, CUSTOMER_ID_RAW, RESTAURANT_ID_RAW,
+        ORDER_DATE_RAW, TOTAL_AMOUNT_RAW, ORDER_STATUS_RAW, PAYMENT_METHOD_RAW,
         INGEST_RUN_ID, CREATED_AT, UPDATED_AT
     )
     SELECT
@@ -225,13 +238,13 @@ BEGIN
         TRY_TO_NUMBER(RESTAURANT_ID),
         TRY_TO_DATE(ORDER_DATE),
         TRY_TO_NUMBER(TOTAL_AMOUNT, 10, 2),
-        TO_VARCHAR(STATUS),
+        TO_VARCHAR(ORDER_STATUS),
         TO_VARCHAR(PAYMENT_METHOD),
         CUSTOMER_ID,
         RESTAURANT_ID,
         ORDER_DATE,
         TOTAL_AMOUNT,
-        STATUS,
+        ORDER_STATUS,
         PAYMENT_METHOD,
         :V_INGEST_RUN_ID,
         CURRENT_TIMESTAMP(),
@@ -248,7 +261,7 @@ BEGIN
     V_EXECUTION_DURATION := DATEDIFF(SECOND, V_START_TIME, V_END_TIME);
 
     RETURN OBJECT_CONSTRUCT(
-        'STATUS', 'SUCCESS',
+        'ORDER_STATUS', 'SUCCESS',
         'MESSAGE', 'Data loaded successfully from ' || V_SOURCE_TYPE_UPPER,
         'SOURCE_TYPE', V_SOURCE_TYPE_UPPER,
         'FILE_PATH', V_FILE_PATH,
@@ -268,7 +281,7 @@ EXCEPTION
         DROP TABLE IF EXISTS TEMP_ORDER_LOAD;
 
         RETURN OBJECT_CONSTRUCT(
-            'STATUS', 'FAILED',
+            'ORDER_STATUS', 'FAILED',
             'ERROR', V_ERROR_MESSAGE,
             'SOURCE_TYPE', V_SOURCE_TYPE_UPPER,
             'FILE_PATH', V_FILE_PATH,
@@ -279,7 +292,6 @@ EXCEPTION
         );
 END;
 $$;
-
 -- --------------------------------------------------------------------------------------------------------------------------------------------------------------
 -- PROCEDURE: ORDER BRONZE TO SILVER
 -- --------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -310,8 +322,8 @@ DECLARE
     v_error_message VARCHAR(5000);
     v_sql VARCHAR(10000);
     v_dq_result VARIANT;
-    v_dq_result_status VARCHAR(50);
-    v_run_status VARCHAR(50);
+    v_dq_result_ORDER_STATUS VARCHAR(50);
+    v_run_ORDER_STATUS VARCHAR(50);
 
 BEGIN
 
@@ -330,21 +342,21 @@ BEGIN
     WHERE INGEST_RUN_ID = :P_INGEST_RUN_ID;
 
     -- IF EXISTS (SELECT 1 FROM COMMON.INGEST_RUN WHERE INGEST_RUN_ID = :P_INGEST_RUN_ID) THEN
-    -- RETURN OBJECT_CONSTRUCT('STATUS', 'SKIPPED', 'ERROR', 'Already processed');
+    -- RETURN OBJECT_CONSTRUCT('ORDER_STATUS', 'SKIPPED', 'ERROR', 'Already processed');
     -- END IF;
 
     -- Validate configuration
     IF (v_bronze_table IS NULL OR v_load_error_table IS NULL OR
         v_stage_table IS NULL OR v_silver_table IS NULL) THEN
         RETURN OBJECT_CONSTRUCT(
-            'STATUS', 'FAILED',
+            'ORDER_STATUS', 'FAILED',
             'ERROR', 'Configuration not found for pipeline: ' || P_PIPELINE_NAME
         );
     END IF;
 
     IF (v_bronze_row_count = 0) THEN
         RETURN OBJECT_CONSTRUCT(
-            'STATUS', 'FAILED',
+            'ORDER_STATUS', 'FAILED',
             'ERROR', 'No records found for INGEST_RUN_ID'
         );
     END IF;
@@ -367,10 +379,10 @@ BEGIN
     CLOSE cur;
 
     -- Check if DQ validation was successful
-    v_dq_result_status := v_dq_result:STATUS::STRING;
-    IF (v_dq_result_status NOT LIKE 'SUCCESS%') THEN
+    v_dq_result_ORDER_STATUS := v_dq_result:ORDER_STATUS::STRING;
+    IF (v_dq_result_ORDER_STATUS NOT LIKE 'SUCCESS%') THEN
         RETURN OBJECT_CONSTRUCT(
-            'STATUS', 'FAILED',
+            'ORDER_STATUS', 'FAILED',
             'ERROR', 'DQ Validation failed'
         );
     END IF;
@@ -391,7 +403,7 @@ BEGIN
             RESTAURANT_ID,
             ORDER_DATE,
             TOTAL_AMOUNT,
-            STATUS,
+            ORDER_STATUS,
             PAYMENT_METHOD,
             CREATED_AT,
             UPDATED_AT,
@@ -403,18 +415,18 @@ BEGIN
 
     WHEN MATCHED THEN
         UPDATE SET
-            TGT.STATUS = SRC.STATUS,
+            TGT.ORDER_STATUS = SRC.ORDER_STATUS,
             TGT.TOTAL_AMOUNT = SRC.TOTAL_AMOUNT,
             TGT.UPDATED_AT = SRC.UPDATED_AT
 
     WHEN NOT MATCHED THEN
         INSERT (
             ORDER_ID, CUSTOMER_ID, RESTAURANT_ID, ORDER_DATE,
-            TOTAL_AMOUNT, STATUS, PAYMENT_METHOD, CREATED_AT, UPDATED_AT, BATCH_ID
+            TOTAL_AMOUNT, ORDER_STATUS, PAYMENT_METHOD, CREATED_AT, UPDATED_AT, BATCH_ID
         )
         VALUES (
             SRC.ORDER_ID, SRC.CUSTOMER_ID, SRC.RESTAURANT_ID, SRC.ORDER_DATE,
-            SRC.TOTAL_AMOUNT, SRC.STATUS, SRC.PAYMENT_METHOD, SRC.CREATED_AT,
+            SRC.TOTAL_AMOUNT, SRC.ORDER_STATUS, SRC.PAYMENT_METHOD, SRC.CREATED_AT,
             SRC.UPDATED_AT, ''' || P_BATCH_ID || '''
         )';
     EXECUTE IMMEDIATE v_sql;
@@ -429,7 +441,7 @@ BEGIN
 
     -- Insert into INGEST_RUN table
     INSERT INTO COMMON.INGEST_RUN(
-        INGEST_RUN_ID, PIPELINE_NAME, SOURCE_TABLE, LOAD_ERROR_TABLE, RUN_STATUS,
+        INGEST_RUN_ID, PIPELINE_NAME, SOURCE_TABLE, LOAD_ERROR_TABLE, RUN_ORDER_STATUS,
         SOURCE_ROW_COUNT, VALID_ROW_COUNT, INVALID_ROW_COUNT, EXECUTION_DURATION_SEC,
         ERROR_MESSAGE, EXECUTED_AT, EXECUTED_BY)
     VALUES(
@@ -452,7 +464,7 @@ BEGIN
     EXECUTE IMMEDIATE v_sql;
 
     RETURN OBJECT_CONSTRUCT(
-        'STATUS', 'SUCCESSFUL',
+        'ORDER_STATUS', 'SUCCESSFUL',
         'ERROR', 'NONE',
         'ROWS_INSERTED', v_rows_inserted::VARCHAR,
         'ROWS_UPDATED', v_rows_updated::VARCHAR,
@@ -475,9 +487,9 @@ EXCEPTION
         v_end_time := CURRENT_TIMESTAMP();
         v_execution_duration := DATEDIFF(SECOND, v_start_time, v_end_time);
 
-        -- Update run status to failed
+        -- Update run ORDER_STATUS to failed
         INSERT INTO COMMON.INGEST_RUN(
-            INGEST_RUN_ID, PIPELINE_NAME, SOURCE_TABLE, LOAD_ERROR_TABLE, RUN_STATUS,
+            INGEST_RUN_ID, PIPELINE_NAME, SOURCE_TABLE, LOAD_ERROR_TABLE, RUN_ORDER_STATUS,
             SOURCE_ROW_COUNT, VALID_ROW_COUNT, INVALID_ROW_COUNT, EXECUTION_DURATION_SEC,
             ERROR_MESSAGE, EXECUTED_AT, EXECUTED_BY)
         VALUES(
@@ -499,7 +511,7 @@ EXCEPTION
         EXECUTE IMMEDIATE 'DROP TABLE IF EXISTS ' || v_stage_table;
 
         RETURN OBJECT_CONSTRUCT(
-            'STATUS', 'FAILED',
+            'ORDER_STATUS', 'FAILED',
             'ERROR', v_error_message
         );
 END;
@@ -517,7 +529,7 @@ DECLARE
     V_CURRENT_TIMESTAMP TIMESTAMP_TZ;
     V_ROWS_INSERTED INTEGER DEFAULT 0;
     V_ROWS_UPDATED INTEGER DEFAULT 0;
-    V_STATUS_CHANGES INTEGER DEFAULT 0;
+    V_ORDER_STATUS_CHANGES INTEGER DEFAULT 0;
     V_ERROR_MESSAGE VARCHAR(5000);
     V_START_TIME TIMESTAMP_TZ;
     V_END_TIME TIMESTAMP_TZ;
@@ -530,23 +542,23 @@ BEGIN
     BEGIN TRANSACTION;
 
     -- ========================================
-    -- STEP 1: CAPTURE STATUS CHANGES (BEFORE UPDATE)
+    -- STEP 1: CAPTURE ORDER_STATUS CHANGES (BEFORE UPDATE)
     -- ========================================
-    -- Create temp table to store old status before merge
-    CREATE OR REPLACE TEMPORARY TABLE TEMP_STATUS_CHANGES AS
+    -- Create temp table to store old ORDER_STATUS before merge
+    CREATE OR REPLACE TEMPORARY TABLE TEMP_ORDER_STATUS_CHANGES AS
     SELECT
         TGT.ORDER_ID,
-        TGT.CURRENT_STATUS AS OLD_STATUS,
-        SRC.STATUS AS NEW_STATUS,
-        :V_CURRENT_TIMESTAMP AS STATUS_CHANGED_AT,
+        TGT.CURRENT_ORDER_STATUS AS OLD_ORDER_STATUS,
+        SRC.ORDER_STATUS AS NEW_ORDER_STATUS,
+        :V_CURRENT_TIMESTAMP AS ORDER_STATUS_CHANGED_AT,
         :P_BATCH_ID AS BATCH_ID
     FROM GOLD.FACT_ORDER TGT
     INNER JOIN SILVER.ORDER_SLV SRC
         ON TGT.ORDER_ID = SRC.ORDER_ID
     WHERE SRC.BATCH_ID = :P_BATCH_ID
-        AND TGT.CURRENT_STATUS != SRC.STATUS;
+        AND TGT.CURRENT_ORDER_STATUS != SRC.ORDER_STATUS;
 
-    SELECT COUNT(*) INTO :V_STATUS_CHANGES FROM TEMP_STATUS_CHANGES;
+    SELECT COUNT(*) INTO :V_ORDER_STATUS_CHANGES FROM TEMP_ORDER_STATUS_CHANGES;
 
     -- ========================================
     -- STEP 2: MERGE DATA FROM SILVER TO GOLD
@@ -559,7 +571,7 @@ BEGIN
             RESTAURANT_ID,
             ORDER_DATE,
             TOTAL_AMOUNT,
-            STATUS,
+            ORDER_STATUS,
             PAYMENT_METHOD,
             BATCH_ID,
             CREATED_AT,
@@ -576,12 +588,12 @@ BEGIN
             TGT.RESTAURANT_ID = SRC.RESTAURANT_ID,
             TGT.ORDER_DATE = SRC.ORDER_DATE,
             TGT.TOTAL_AMOUNT = SRC.TOTAL_AMOUNT,
-            TGT.CURRENT_STATUS = SRC.STATUS,
+            TGT.CURRENT_ORDER_STATUS = SRC.ORDER_STATUS,
             TGT.PAYMENT_METHOD = SRC.PAYMENT_METHOD,
-            TGT.STATUS_UPDATED_AT = CASE
-                WHEN TGT.CURRENT_STATUS != SRC.STATUS
+            TGT.ORDER_STATUS_UPDATED_AT = CASE
+                WHEN TGT.CURRENT_ORDER_STATUS != SRC.ORDER_STATUS
                 THEN :V_CURRENT_TIMESTAMP
-                ELSE TGT.STATUS_UPDATED_AT
+                ELSE TGT.ORDER_STATUS_UPDATED_AT
             END,
             TGT.BATCH_ID = SRC.BATCH_ID,
             TGT.UPDATED_AT = :V_CURRENT_TIMESTAMP
@@ -594,10 +606,10 @@ BEGIN
             RESTAURANT_ID,
             ORDER_DATE,
             TOTAL_AMOUNT,
-            CURRENT_STATUS,
-            INITIAL_STATUS,
+            CURRENT_ORDER_STATUS,
+            INITIAL_ORDER_STATUS,
             PAYMENT_METHOD,
-            STATUS_UPDATED_AT,
+            ORDER_STATUS_UPDATED_AT,
             BATCH_ID,
             CREATED_AT,
             UPDATED_AT
@@ -608,8 +620,8 @@ BEGIN
             SRC.RESTAURANT_ID,
             SRC.ORDER_DATE,
             SRC.TOTAL_AMOUNT,
-            SRC.STATUS,
-            SRC.STATUS,  -- Initial status = current status for new records
+            SRC.ORDER_STATUS,
+            SRC.ORDER_STATUS,  -- Initial ORDER_STATUS = current ORDER_STATUS for new records
             SRC.PAYMENT_METHOD,
             :V_CURRENT_TIMESTAMP,
             SRC.BATCH_ID,
@@ -625,27 +637,27 @@ BEGIN
     V_ROWS_UPDATED := SQLROWCOUNT - V_ROWS_INSERTED;
 
     -- ========================================
-    -- STEP 3: LOG STATUS CHANGES TO HISTORY
+    -- STEP 3: LOG ORDER_STATUS CHANGES TO HISTORY
     -- ========================================
-    IF (V_STATUS_CHANGES > 0) THEN
-        INSERT INTO GOLD.FACT_ORDER_STATUS_HISTORY (
+    IF (V_ORDER_STATUS_CHANGES > 0) THEN
+        INSERT INTO GOLD.FACT_ORDER_ORDER_STATUS_HISTORY (
             ORDER_ID,
-            OLD_STATUS,
-            NEW_STATUS,
-            STATUS_CHANGED_AT,
+            OLD_ORDER_STATUS,
+            NEW_ORDER_STATUS,
+            ORDER_STATUS_CHANGED_AT,
             BATCH_ID
         )
         SELECT
             ORDER_ID,
-            OLD_STATUS,
-            NEW_STATUS,
-            STATUS_CHANGED_AT,
+            OLD_ORDER_STATUS,
+            NEW_ORDER_STATUS,
+            ORDER_STATUS_CHANGED_AT,
             BATCH_ID
-        FROM TEMP_STATUS_CHANGES;
+        FROM TEMP_ORDER_STATUS_CHANGES;
     END IF;
 
     -- Cleanup temp table
-    DROP TABLE IF EXISTS TEMP_STATUS_CHANGES;
+    DROP TABLE IF EXISTS TEMP_ORDER_STATUS_CHANGES;
 
     -- Commit transaction
     COMMIT;
@@ -654,11 +666,11 @@ BEGIN
     V_EXECUTION_DURATION := DATEDIFF(SECOND, V_START_TIME, V_END_TIME);
 
     RETURN OBJECT_CONSTRUCT(
-        'STATUS', 'SUCCESS',
+        'ORDER_STATUS', 'SUCCESS',
         'ERROR', 'NONE',
         'ROWS_INSERTED', V_ROWS_INSERTED::VARCHAR,
         'ROWS_UPDATED', V_ROWS_UPDATED::VARCHAR,
-        'STATUS_CHANGES_LOGGED', V_STATUS_CHANGES::VARCHAR,
+        'ORDER_STATUS_CHANGES_LOGGED', V_ORDER_STATUS_CHANGES::VARCHAR,
         'EXECUTION_TIME_SEC', V_EXECUTION_DURATION::VARCHAR,
         'BATCH_ID', P_BATCH_ID,
         'PROCESSED_AT', V_CURRENT_TIMESTAMP::VARCHAR
@@ -674,14 +686,14 @@ EXCEPTION
         V_EXECUTION_DURATION := DATEDIFF(SECOND, V_START_TIME, V_END_TIME);
 
         -- Cleanup temp table
-        DROP TABLE IF EXISTS TEMP_STATUS_CHANGES;
+        DROP TABLE IF EXISTS TEMP_ORDER_STATUS_CHANGES;
 
         RETURN OBJECT_CONSTRUCT(
-            'STATUS', 'FAILED',
+            'ORDER_STATUS', 'FAILED',
             'ERROR', V_ERROR_MESSAGE,
             'ROWS_INSERTED', V_ROWS_INSERTED::VARCHAR,
             'ROWS_UPDATED', V_ROWS_UPDATED::VARCHAR,
-            'STATUS_CHANGES_LOGGED', V_STATUS_CHANGES::VARCHAR,
+            'ORDER_STATUS_CHANGES_LOGGED', V_ORDER_STATUS_CHANGES::VARCHAR,
             'EXECUTION_TIME_SEC', V_EXECUTION_DURATION::VARCHAR,
             'BATCH_ID', P_BATCH_ID,
             'NOTE', 'Transaction rolled back'

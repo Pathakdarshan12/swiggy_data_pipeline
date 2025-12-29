@@ -11,32 +11,37 @@ seed-paths: ["seeds"]
 macro-paths: ["macros"]
 snapshot-paths: ["snapshots"]
 
-target-path: "target"
 clean-targets:
   - "target"
   - "dbt_packages"
 
-# Configure materialization and schema for each layer
 models:
   datavelocity_dbt:
-    bronze:
-      +materialized: table
-      +schema: bronze
-      +tags: ['bronze', 'raw']
-    silver:
-      +materialized: table
-      +schema: silver
-      +tags: ['silver', 'cleansed']
     gold:
       +materialized: table
       +schema: gold
-      +tags: ['gold', 'analytics']
+
       dimensions:
+        +tags: ["dimension", "gold"]
         +materialized: table
-        +tags: ['dimension', 'scd2']
+
       facts:
-        +materialized: incremental
-        +on_schema_change: 'append_new_columns'
-        +tags: ['fact', 'incremental']
-      mart:
-        +materialized: view
+        +tags: ["fact", "gold"]
+        +materialized: table
+
+      analytics:
+        +tags: ["mart", "analytics"]
+        +materialized: table
+        +schema: analytics  # Creates ANALYTICS schema instead of GOLD
+
+        customer:
+          +tags: ["mart", "customer"]
+
+        delivery:
+          +tags: ["mart", "delivery"]
+
+        orders:
+          +tags: ["mart", "orders"]
+
+        restaurant:
+          +tags: ["mart", "restaurant"]
