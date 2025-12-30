@@ -1,10 +1,12 @@
+-- models/gold/dim_customer.sql
 {{
-    config(
-        materialized='table',
-        schema='gold',
-        tags=['dimension', 'customer', 'scd2', 'pii']
-    )
+  config(
+    materialized='view',
+    tags=['reference', 'dimension', 'customer', 'pii']
+  )
 }}
+
+-- This is a reference model for the existing DIM_CUSTOMER table
 
 SELECT
     CUSTOMER_ID,
@@ -22,4 +24,6 @@ SELECT
     BATCH_ID,
     CREATED_AT,
     UPDATED_AT
-FROM {{ source('gold', 'DIM_CUSTOMER') }}
+FROM {{ source('gold', 'dim_customer') }}
+WHERE STATUS = 'ACTIVE'
+    AND EFF_END_DT = '9999-12-31 23:59:59'::TIMESTAMP_TZ

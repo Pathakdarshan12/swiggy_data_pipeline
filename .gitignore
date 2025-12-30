@@ -64,3 +64,4 @@ snowflake_key.pub
 # Allow safe templates
 !*-connector.template.json
 /LinkedIn.txt
+/data/

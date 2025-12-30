@@ -1,20 +1,24 @@
+-- models/gold/fact_order.sql
 {{
-    config(
-        materialized='table',
-        schema='gold',
-        tags=['fact', 'order', 'audit', 'history']
-    )
+  config(
+    materialized='view',
+    tags=['reference', 'fact', 'order']
+  )
 }}
 
--- FACT_ORDER_STATUS_HISTORY
--- Audit trail for order status changes
--- Tracks all status transitions for orders
+-- This is a reference model for the existing FACT_ORDER table
 
 SELECT
-    STATUS_HISTORY_KEY,
     ORDER_ID,
-    OLD_STATUS,
-    NEW_STATUS,
-    STATUS_CHANGED_AT,
-    BATCH_ID
-FROM {{ source('gold', 'FACT_ORDER_STATUS_HISTORY') }}
+    CUSTOMER_ID,
+    RESTAURANT_ID,
+    ORDER_DATE,
+    TOTAL_AMOUNT,
+    CURRENT_STATUS,
+    INITIAL_STATUS,
+    PAYMENT_METHOD,
+    STATUS_UPDATED_AT,
+    BATCH_ID,
+    CREATED_AT,
+    UPDATED_AT
+FROM {{ source('gold', 'fact_order') }}

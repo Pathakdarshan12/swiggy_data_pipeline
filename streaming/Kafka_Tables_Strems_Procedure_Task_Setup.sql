@@ -148,7 +148,6 @@ ON TABLE BRONZE.ORDER_ITEMS_STREAM
 APPEND_ONLY = TRUE
 COMMENT = 'Captures new order item records for Gold layer processing';
 
-
 -- Stream for Delivery
 CREATE OR REPLACE STREAM BRONZE.STREAM_DELIVERY_CHANGES
 ON TABLE BRONZE.DELIVERY_STREAM
@@ -173,7 +172,7 @@ CREATE OR REPLACE TASK BRONZE.TASK_ORDERS_STREAM_TO_GOLD
     SCHEDULE = '2 MINUTE'
     WHEN SYSTEM$STREAM_HAS_DATA('BRONZE.STREAM_ORDERS_CHANGES')
 AS
-CALL COMMON.SP_IMPORT_MASTER('ORDER_PIPELINE_STREAM', 'None');
+CALL COMMON.SP_UNIVERSAL_ETL_MASTER('ORDER_STREAM', NULL);
 
 -- Task for Order Items (every 5 minutes)
 CREATE OR REPLACE TASK BRONZE.TASK_ORDER_ITEMS_STREAM_TO_GOLD
@@ -181,7 +180,7 @@ CREATE OR REPLACE TASK BRONZE.TASK_ORDER_ITEMS_STREAM_TO_GOLD
     SCHEDULE = '3 MINUTE'
     WHEN SYSTEM$STREAM_HAS_DATA('BRONZE.STREAM_ORDER_ITEM_CHANGES')
 AS
-CALL COMMON.SP_IMPORT_MASTER('ORDER_ITEM_PIPELINE_STREAM', 'None');
+CALL COMMON.SP_UNIVERSAL_ETL_MASTER('ORDER_ITEM_STREAM', NULL);
 
 -- Task for Delivery (every 2 minutes - more frequent)
 CREATE OR REPLACE TASK BRONZE.TASK_DELIVERY_STREAM_TO_GOLD
@@ -189,13 +188,12 @@ CREATE OR REPLACE TASK BRONZE.TASK_DELIVERY_STREAM_TO_GOLD
     SCHEDULE = '4 MINUTE'
     WHEN SYSTEM$STREAM_HAS_DATA('BRONZE.STREAM_DELIVERY_CHANGES')
 AS
-CALL COMMON.SP_IMPORT_MASTER('DELIVERY_PIPELINE_STREAM', 'None');
+CALL COMMON.SP_UNIVERSAL_ETL_MASTER('DELIVERY_STREAM', NULL);
 
 -- Resume all tasks
 ALTER TASK BRONZE.TASK_ORDERS_STREAM_TO_GOLD RESUME;
 ALTER TASK BRONZE.TASK_ORDER_ITEMS_STREAM_TO_GOLD RESUME;
 ALTER TASK BRONZE.TASK_DELIVERY_STREAM_TO_GOLD RESUME;
-
 -- =====================================================
 -- MONITORING QUERIES
 -- =====================================================
@@ -243,3 +241,16 @@ SELECT * FROM COMMON.PIPELINE_EXECUTION_RESULT;
 
 SELECT * FROM COMMON.VW_TASK_EXECUTION_STATUS;
 SELECT CURRENT_TIMESTAMP();
+
+select batch_id, max(created_at),count(*) from gold.fact_order group by batch_id order by 2 desc;
+select batch_id, max(created_at),count(*) from gold.fact_order_item group by batch_id  order by 2 desc;
+select batch_id, max(created_at),count(*) from gold.fact_delivery group by batch_id order by 2 desc;
+
+select * from gold.fact_order order by created_at desc;
+select * from gold.fact_order order by created_at desc;
+
+
+select record_content, record_content:event_timestamp from orders_stream order by 2 desc;
+select record_content, record_content:event_timestamp from order_items_stream order by 2 desc;
+select record_content, record_content:event_timestamp from delivery_stream order by 2 desc;
+

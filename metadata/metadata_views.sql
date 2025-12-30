@@ -80,7 +80,6 @@ ORDER BY
 -- VIEW 2: V_BRONZE_COPY_SQL
 -- Purpose: Generate COPY INTO statements for STAGE → BRONZE
 -- =======================================================================================================================================
-SELECT * FROM V_SILVER_MERGE_SQL;
 CREATE OR REPLACE VIEW COMMON.V_BRONZE_COPY_SQL AS
 WITH source_metadata AS (
     SELECT
@@ -121,7 +120,6 @@ column_data_numbered AS (
         cd.*,
         ROW_NUMBER() OVER (PARTITION BY cd.source_id ORDER BY cd.column_position) AS new_position
     FROM column_data cd
-    WHERE cd.is_primary_key = FALSE
 ),
 -- Build COPY SQL components for BATCH+CSV (EXCLUDE PRIMARY KEY)
 batch_csv_copy AS (
@@ -158,25 +156,20 @@ batch_bronze_parts AS (
 
         -- Temp table columns (exclude primary key)
         LISTAGG(
-            CASE WHEN cd.is_primary_key = FALSE
-            THEN CONCAT(cd.field_name, ' VARCHAR')
-            END,
+            CONCAT(cd.field_name, ' VARCHAR'),
             ', '
         ) WITHIN GROUP (ORDER BY cd.column_position) AS bronze_target_columns_typed,
 
         -- Transformation expressions (use default_value for PK, file_column_name for others)
         LISTAGG(
-            CASE
-                WHEN cd.is_primary_key = TRUE THEN COALESCE(cd.default_value, 'NULL')
-                ELSE COALESCE(cd.transformation_rule, cd.file_column_name)
-            END,
+                COALESCE(cd.transformation_rule, cd.file_column_name),
             ', '
         ) WITHIN GROUP (ORDER BY cd.column_position) AS bronze_transform_list,
 
         -- Raw columns (non-PK only)
         NULLIF(
             LISTAGG(
-                CASE WHEN cd.is_primary_key = FALSE THEN cd.field_name || '_RAW' END,
+                cd.field_name || '_RAW',
                 ', '
             ) WITHIN GROUP (ORDER BY cd.column_position),
             ''
@@ -185,7 +178,7 @@ batch_bronze_parts AS (
         -- Raw source columns
         NULLIF(
             LISTAGG(
-                CASE WHEN cd.is_primary_key = FALSE THEN cd.file_column_name END,
+                cd.file_column_name,
                 ', '
             ) WITHIN GROUP (ORDER BY cd.column_position),
             ''
@@ -256,7 +249,7 @@ SELECT
             bcs.copy_target_columns ||
             ') FROM (SELECT ' ||
             bcs.copy_source_columns ||
-            ' FROM ''' || sm.landing_path || '{file_name}''' ||
+            ' FROM ''' || sm.landing_path || ':P_FILE_NAME''' ||
             ') FILE_FORMAT = (TYPE = CSV ' ||
             'FIELD_DELIMITER = ''' || sm.delimiter || ''' ' ||
             IFF(sm.header_present = 'Y', 'SKIP_HEADER = 1 ', '') ||
@@ -331,7 +324,7 @@ SELECT
     -- Add audit values if enabled
     CASE
         WHEN sm.enable_audit_columns = 'Y'
-        THEN ', {ingest_run_id}, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP()'
+        THEN ', :P_INGEST_RUN_ID, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP()'
         ELSE ''
     END ||
 
@@ -346,6 +339,131 @@ LEFT JOIN stream_bronze_parts sbp ON sm.source_id = sbp.source_id;
 -- =======================================================================================================================================
 -- VIEW 3: V_SILVER_MERGE_SQL
 -- Purpose: Generate MERGE statements for BRONZE → SILVER
+-- =======================================================================================================================================
+CREATE OR REPLACE VIEW DATAVELOCITY.COMMON.V_SILVER_MERGE_SQL(
+	SOURCE_ID,
+	SOURCE_NAME,
+	BRONZE_TABLE,
+	SILVER_TABLE,
+	MERGE_SQL,
+	APPEND_SQL
+) AS WITH MERGE_SPECS AS (
+    SELECT
+        SOURCE_ID,
+        SOURCE_NAME,
+        BRONZE_TABLE,
+        SILVER_TABLE,
+        LOAD_TYPE,
+        MERGE_KEY_FIELDS,
+        -- ALL NON-PK COLUMNS FOR UPDATE
+        LISTAGG(
+            CASE
+                WHEN NOT IS_PRIMARY_KEY
+                AND NOT AUTO_INCREMENT_FLAG THEN 'TGT.' || TARGET_COLUMN_NAME || ' = SRC.' || TARGET_COLUMN_NAME
+            END,
+            ',
+            '
+        ) WITHIN GROUP (
+            ORDER BY
+                COLUMN_POSITION
+        ) AS UPDATE_SET_CLAUSE,
+        -- ALL COLUMNS FOR INSERT
+        LISTAGG(TARGET_COLUMN_NAME, ', ') WITHIN GROUP (
+            ORDER BY
+                COLUMN_POSITION
+        ) AS INSERT_COLUMNS,
+        -- SOURCE COLUMN REFERENCES FOR INSERT
+        LISTAGG('SRC.' || TARGET_COLUMN_NAME, ', ') WITHIN GROUP (
+            ORDER BY
+                COLUMN_POSITION
+        ) AS INSERT_VALUES,
+        -- MERGE KEYS
+        LISTAGG(
+            CASE
+                WHEN IS_PRIMARY_KEY
+                OR TARGET_COLUMN_NAME IN (
+                    SELECT
+                        TRIM(VALUE)
+                    FROM
+                        TABLE(SPLIT_TO_TABLE(MERGE_KEY_FIELDS, ','))
+                ) THEN 'TGT.' || TARGET_COLUMN_NAME || ' = SRC.' || TARGET_COLUMN_NAME
+            END,
+            '
+    AND '
+        ) WITHIN GROUP (
+            ORDER BY
+                COLUMN_POSITION
+        ) AS MERGE_ON_CLAUSE
+    FROM
+        COMMON.V_ENTITY_COLUMN_MAPPING
+    GROUP BY
+        SOURCE_ID,
+        SOURCE_NAME,
+        BRONZE_TABLE,
+        SILVER_TABLE,
+        LOAD_TYPE,
+        MERGE_KEY_FIELDS
+)
+SELECT
+    SOURCE_ID,
+    SOURCE_NAME,
+    BRONZE_TABLE,
+    SILVER_TABLE,
+    -- MERGE SQL FOR UPSERT LOAD TYPE
+    CASE
+        WHEN LOAD_TYPE = 'MERGE'
+        THEN 'MERGE INTO ' || SILVER_TABLE || ' AS TGT
+            USING (
+                SELECT
+                ' || INSERT_COLUMNS || ',
+                CURRENT_TIMESTAMP() AS CREATED_AT,
+                CURRENT_TIMESTAMP() AS UPDATED_AT,
+                :P_BATCH_ID AS BATCH_ID
+            FROM ' || BRONZE_TABLE || '
+            WHERE INGEST_RUN_ID = :P_INGEST_RUN_ID
+            AND IS_VALID = TRUE
+        ) AS SRC
+    ON ' || MERGE_ON_CLAUSE || '
+
+    WHEN MATCHED THEN
+        UPDATE SET
+            ' || UPDATE_SET_CLAUSE || ',
+            TGT.UPDATED_AT = SRC.UPDATED_AT,
+            TGT.BATCH_ID = SRC.BATCH_ID
+
+    WHEN NOT MATCHED THEN
+    INSERT (
+        ' || INSERT_COLUMNS || ', BATCH_ID, CREATED_AT, UPDATED_AT
+    )
+    VALUES (
+        ' || INSERT_VALUES || ', SRC.BATCH_ID, SRC.CREATED_AT, SRC.UPDATED_AT
+    );'
+    END AS MERGE_SQL,
+
+    -- INSERT SQL FOR APPEND LOAD TYPE
+    CASE
+        WHEN LOAD_TYPE = 'APPEND' THEN 'INSERT INTO ' || SILVER_TABLE || ' (
+    ' || INSERT_COLUMNS || ', BATCH_ID, CREATED_AT, UPDATED_AT
+)
+SELECT
+    ' || INSERT_COLUMNS || ',
+    :P_BATCH_ID,
+    CURRENT_TIMESTAMP(),
+    CURRENT_TIMESTAMP()
+FROM ' || BRONZE_TABLE || '
+WHERE INGEST_RUN_ID = :P_INGEST_RUN_ID
+  AND IS_VALID = TRUE
+  AND NOT EXISTS (
+      SELECT 1 FROM ' || SILVER_TABLE || ' TGT
+      WHERE ' || MERGE_ON_CLAUSE || '
+  );'
+    END AS APPEND_SQL
+FROM
+    MERGE_SPECS;
+
+-- =======================================================================================================================================
+-- VIEW 4: V_GOLD_SCD2_SQL
+-- Purpose: Generate MERGE statements for SILVER → GOLD
 -- =======================================================================================================================================
 CREATE OR REPLACE VIEW COMMON.V_GOLD_SCD2_SQL AS
 WITH scd2_specs AS (
@@ -461,7 +579,7 @@ SELECT
     B.SOURCE_ID,
     B.SOURCE_NAME,
     B.LANDING_PATH,
-    B.SOURCE_NAME as temp_table,
+    CONCAT('TEMP_', B.SOURCE_NAME) as temp_table,
     B.BRONZE_TABLE,
     REPLACE(B.BRONZE_TABLE,'BRZ','LOAD_ERROR') as load_error_table,
     REPLACE(REPLACE(B.BRONZE_TABLE,'BRONZE.','STG_'), 'BRZ', 'DQ') as stage_table,
@@ -483,4 +601,5 @@ JOIN V_SILVER_MERGE_SQL S
     ON B.SOURCE_ID = S.SOURCE_ID
 JOIN V_GOLD_SCD2_SQL G
     ON B.SOURCE_ID = G.SOURCE_ID;
--- =======================================================================================================================================
+SELECT * FROM VW_INGESTION_PIPELINE_SQL;
+-- =======================================================================================================================================4

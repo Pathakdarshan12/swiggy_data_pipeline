@@ -54,6 +54,7 @@ CREATE OR REPLACE TABLE COMMON.DATA_FIELD_MASTER (
     pii_flag                CHAR(1) DEFAULT 'N',
     created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
 -- =======================================================================================================================================
 -- FILE_COLUMN_MAPPING
 -- Purpose: Maps physical file columns to logical business fields
@@ -143,7 +144,6 @@ CREATE OR REPLACE TABLE COMMON.INGEST_RUN (
     EXECUTED_AT TIMESTAMP_TZ(9) DEFAULT CURRENT_TIMESTAMP(),
     EXECUTED_BY VARCHAR(100) DEFAULT CURRENT_USER()
 );
--- =====================================================
 -- =====================================================
 -- PIPELINE_EXECUTION_RESULT
 -- =====================================================

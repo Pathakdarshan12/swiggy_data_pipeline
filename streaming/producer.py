@@ -58,7 +58,7 @@ def generate_order_event(event_type='ORDER_CREATED'):
         'restaurant_id': random.choice(RESTAURANT_IDS),
         'order_date': datetime.now().isoformat(),
         'total_amount': round(random.uniform(100, 2000), 2),
-        'status': 'PLACED' if event_type == 'ORDER_CREATED' else random.choice(ORDER_STATUSES),
+        'order_status': 'PLACED' if event_type == 'ORDER_CREATED' else random.choice(ORDER_STATUSES),
         'payment_method': random.choice(PAYMENT_METHODS)
     }
 

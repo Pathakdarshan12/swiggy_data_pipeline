@@ -1,13 +1,7 @@
 -- =======================================================================================================================================
--- UNIVERSAL ETL PROCEDURES - Works for ALL entities using metadata
--- =======================================================================================================================================
-
--- =======================================================================================================================================
 -- PROCEDURE 1: UNIVERSAL_STAGE_TO_BRONZE
 -- Purpose: Load data from Stage/Stream to Bronze for ANY entity
 -- =======================================================================================================================================
-CALL SP_UNIVERSAL_STAGE_TO_BRONZE('ORDER_BATCH','orders_01-01-2025.csv');
-
 CREATE OR REPLACE PROCEDURE COMMON.SP_UNIVERSAL_STAGE_TO_BRONZE(
     P_SOURCE_NAME VARCHAR,
     P_FILE_NAME VARCHAR DEFAULT NULL  -- NULL for stream sources
@@ -26,6 +20,7 @@ DECLARE
 
     -- Dynamic SQL from metadata views
     V_INGESTION_TYPE VARCHAR;
+    V_TEMP_TABLE VARCHAR;
     V_TEMP_TABLE_DDL VARCHAR;
     V_COPY_SQL VARCHAR;
     V_STREAM_INSERT_SQL VARCHAR;
@@ -39,6 +34,7 @@ BEGIN
     -- Fetch metadata-driven SQL from views
     SELECT
         ingestion_type,
+        temp_table,
         temp_table_ddl,
         file_copy_sql,
         stream_insert_sql,
@@ -47,13 +43,14 @@ BEGIN
         landing_path
     INTO
         V_INGESTION_TYPE,
+        V_TEMP_TABLE,
         V_TEMP_TABLE_DDL,
         V_COPY_SQL,
         V_STREAM_INSERT_SQL,
         V_BRONZE_INSERT_SQL,
         V_BRONZE_TABLE,
         V_LANDING_PATH
-    FROM COMMON.V_BRONZE_COPY_SQL
+    FROM COMMON.VW_INGESTION_PIPELINE_SQL
     WHERE source_name = :P_SOURCE_NAME;
 
     IF (V_TEMP_TABLE_DDL IS NULL) THEN
@@ -75,11 +72,11 @@ BEGIN
     -- Step 2: Load data based on ingestion type
     IF (V_INGESTION_TYPE = 'BATCH') THEN
         -- Replace placeholders
-        V_COPY_SQL := REPLACE(V_COPY_SQL, '{file_name}', P_FILE_NAME);
+        V_COPY_SQL := REPLACE(V_COPY_SQL, ':P_FILE_NAME', P_FILE_NAME);
         EXECUTE IMMEDIATE V_COPY_SQL;
 
-    -- -- ELSEIF (V_INGESTION_TYPE = 'STREAM') THEN
-    -- --     EXECUTE IMMEDIATE V_STREAM_INSERT_SQL;
+    ELSEIF (V_INGESTION_TYPE = 'STREAM') THEN
+        EXECUTE IMMEDIATE V_STREAM_INSERT_SQL;
 
     ELSE
         ROLLBACK;
@@ -89,9 +86,9 @@ BEGIN
         );
     END IF;
 
-    -- -- Get row count
-    -- -- V_SQL := 'SELECT COUNT(*) FROM TEMP_' || UPPER(P_SOURCE_NAME) || '_LOAD';
-    -- -- EXECUTE IMMEDIATE V_SQL INTO :V_ROWS_INSERTED;
+    -- EXECUTE IMMEDIATE
+    -- 'SELECT COUNT(*) FROM ' || V_TEMP_TABLE
+    -- INTO :V_ROWS_INSERTED;
 
     -- IF (V_ROWS_INSERTED = 0) THEN
     --     ROLLBACK;
@@ -102,7 +99,7 @@ BEGIN
     -- END IF;
 
     -- -- Step 3: Insert into Bronze
-    V_BRONZE_INSERT_SQL := REPLACE(V_BRONZE_INSERT_SQL, '{ingest_run_id}', V_INGEST_RUN_ID::VARCHAR);
+    V_BRONZE_INSERT_SQL := REPLACE(V_BRONZE_INSERT_SQL, ':P_INGEST_RUN_ID', V_INGEST_RUN_ID::VARCHAR);
     EXECUTE IMMEDIATE V_BRONZE_INSERT_SQL;
 
     -- -- Commit transaction
@@ -111,7 +108,7 @@ BEGIN
     -- -- -- Cleanup
     -- -- V_SQL := 'SELECT COUNT(*) FROM IDENTIFIER(?)';
 
-    -- -- EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM TEMP_' || UPPER(P_SOURCE_NAME) || '_LOAD'
+    -- -- EXECUTE IMMEDIATE 'SELECT COUNT(*) FROM ' || V_TEMP_TABLE || ';
     -- -- INTO :V_ROWS_INSERTED;
 
     V_END_TIME := CURRENT_TIMESTAMP();
@@ -148,12 +145,8 @@ $$;
 -- PROCEDURE 2: UNIVERSAL_BRONZE_TO_SILVER
 -- Purpose: Load data from Bronze to Silver for ANY entity with DQ validation P_SOURCE_NAME
 -- =======================================================================================================================================
-call COMMON.SP_UNIVERSAL_BRONZE_TO_SILVER('ORDER_BATCH', 3, 'B1');
-select * from bronze.order_brz;
-SELECT * FROM SILVER.ORDER_SLV;
-
 CREATE OR REPLACE PROCEDURE COMMON.SP_UNIVERSAL_BRONZE_TO_SILVER(
-    P_SOURCE_NAME VARCHAR,
+P_SOURCE_NAME VARCHAR,
     P_INGEST_RUN_ID INTEGER,
     P_BATCH_ID VARCHAR
 )
@@ -196,13 +189,13 @@ BEGIN
         append_sql,
         CASE WHEN merge_sql IS NOT NULL THEN 'MERGE' ELSE 'APPEND' END
     INTO
-        V_BRONZE_TABLE,
-        V_LOAD_ERROR_TABLE,
-        V_STAGE_TABLE,
-        V_SILVER_TABLE,
-        V_MERGE_SQL,
-        V_APPEND_SQL,
-        V_LOAD_TYPE
+        :V_BRONZE_TABLE,
+        :V_LOAD_ERROR_TABLE,
+        :V_STAGE_TABLE,
+        :V_SILVER_TABLE,
+        :V_MERGE_SQL,
+        :V_APPEND_SQL,
+        :V_LOAD_TYPE
     FROM COMMON.VW_INGESTION_PIPELINE_SQL
     WHERE source_name = :P_SOURCE_NAME;
 
@@ -261,17 +254,14 @@ BEGIN
     IF (V_LOAD_TYPE = 'MERGE') THEN
         -- Replace table reference
         V_MERGE_SQL := REPLACE(V_MERGE_SQL, V_BRONZE_TABLE, V_STAGE_TABLE);
+        V_MERGE_SQL := REPLACE(V_MERGE_SQL, ':P_BATCH_ID', '''' || P_BATCH_ID || '''');
+        V_MERGE_SQL := REPLACE(V_MERGE_SQL, ':P_INGEST_RUN_ID', '''' || P_INGEST_RUN_ID || '''');
 
-        -- Replace first ? with INGEST_RUN_ID (in WHERE clause)
-        V_MERGE_SQL := REPLACE(V_MERGE_SQL, 'INGEST_RUN_ID = ?', 'INGEST_RUN_ID = ' || P_INGEST_RUN_ID);
-
-        -- Replace SRC.? with BATCH_ID (fix the invalid syntax and substitute value)
-        V_MERGE_SQL := REPLACE(V_MERGE_SQL, 'SRC.?', '''' || P_BATCH_ID || '''');
         EXECUTE IMMEDIATE V_MERGE_SQL;
     ELSE
         V_APPEND_SQL := REPLACE(V_APPEND_SQL, V_BRONZE_TABLE, V_STAGE_TABLE);
         V_APPEND_SQL := REPLACE(V_APPEND_SQL, ':P_BATCH_ID', '''' || P_BATCH_ID || '''');
-        V_APPEND_SQL := REPLACE(V_APPEND_SQL, ':P_INGEST_RUN_ID', P_INGEST_RUN_ID);
+        V_APPEND_SQL := REPLACE(V_APPEND_SQL, ':P_INGEST_RUN_ID', '''' || P_INGEST_RUN_ID || '''');
         EXECUTE IMMEDIATE V_APPEND_SQL;
     END IF;
 
@@ -355,6 +345,7 @@ $$;
 -- PROCEDURE 3: UNIVERSAL_SILVER_TO_GOLD
 -- Purpose: Load data from Silver to Gold with SCD2 support for ANY entity
 -- =======================================================================================================================================
+
 CREATE OR REPLACE PROCEDURE COMMON.SP_UNIVERSAL_SILVER_TO_GOLD(
     P_SOURCE_NAME VARCHAR,
     P_BATCH_ID VARCHAR
@@ -462,7 +453,6 @@ EXCEPTION
         );
 END;
 $$;
-
 -- =======================================================================================================================================
 -- MASTER ORCHESTRATION PROCEDURE
 -- =======================================================================================================================================

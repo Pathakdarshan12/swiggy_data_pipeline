@@ -1,10 +1,12 @@
+-- models/gold/dim_restaurant.sql
 {{
-    config(
-        materialized='table',
-        schema='gold',
-        tags=['dimension', 'restaurant', 'scd2']
-    )
+  config(
+    materialized='view',
+    tags=['reference', 'dimension', 'restaurant']
+  )
 }}
+
+-- This is a reference model for the existing DIM_RESTAURANT table
 
 SELECT
     RESTAURANT_ID,
@@ -27,4 +29,6 @@ SELECT
     EFF_END_DT,
     CREATED_AT,
     UPDATED_AT
-FROM {{ source('gold', 'DIM_RESTAURANT') }}
+FROM {{ source('gold', 'dim_restaurant') }}
+WHERE STATUS = 'ACTIVE'
+    AND EFF_END_DT = '9999-12-31 23:59:59'::TIMESTAMP_TZ

@@ -1,13 +1,14 @@
+-- models/gold/dim_location.sql
 {{
-    config(
-        materialized='table',
-        schema='gold',
-        tags=['dimension', 'location', 'scd2']
-    )
+  config(
+    materialized='view',
+    tags=['reference', 'dimension', 'location']
+  )
 }}
 
--- Since table already exists, we'll select from it
--- This allows dbt to manage documentation and tests
+-- This is a reference model for the existing DIM_LOCATION table
+-- It does not create the table but documents its structure for use in other models
+
 SELECT
     LOCATION_ID,
     CITY,
@@ -23,4 +24,6 @@ SELECT
     BATCH_ID,
     CREATED_AT,
     UPDATED_AT
-FROM {{ source('gold', 'DIM_LOCATION') }}
+FROM {{ source('gold', 'dim_location') }}
+WHERE STATUS = 'ACTIVE'
+    AND EFF_END_DT = '9999-12-31 23:59:59'::TIMESTAMP_TZ
