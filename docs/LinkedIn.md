@@ -2,7 +2,7 @@
 
 Most data platforms force you to choose: batch OR streaming. Build both, and you maintain two codebases. That's where pipelines break in production.
 
-I spent three months engineering DataVelocity—a production-grade platform that processes CSV batch loads AND real-time Kafka events through the same medallion architecture (Bronze → Silver → Gold). Same validation rules. Same SCD Type 2 logic. Same quality gates. One codebase.
+I spent three months engineering DataVelocity a platform that processes CSV batch loads AND real-time Kafka events through the same medallion architecture (Bronze → Silver → Gold). Same validation rules. Same SCD Type 2 logic. Same quality gates. One codebase.
 
 **The problem nobody talks about:**
 
@@ -19,7 +19,7 @@ Both paths converge at Bronze. Same MERGE logic. Same data quality framework. Sa
 **Engineering decisions that made this work:**
 
 1\. Dual-stage streaming architecture with unified Bronze
-Kafka events land in lightweight staging tables (ORDERS\_STREAM\_SLV) via Snowpipe Streaming for sub-5-second ingestion. Snowflake Streams (CDC) capture changes and feed Bronze tables (ORDERS\_BRZ) where they join the batch pipeline. From Bronze onwards, streaming and batch use identical procedures. Zero code duplication.
+Kafka events land in lightweight staging tables (ORDERS\_STREAM) via Snowpipe Streaming for sub-5-second ingestion. Snowflake Streams (CDC) capture changes and feed Bronze tables (ORDERS\_BRZ) where they join the batch pipeline. From Bronze onwards, streaming and batch use identical procedures. Zero code duplication.
 
 2\. Metadata-driven validation framework
 Validation rules stored in COMMON.DQ\_CONFIG table—not hardcoded in procedures. One rule definition applies to both batch and streaming. The same SP\_EXECUTE\_DATA\_QUALITY\_VALIDATION procedure runs on every record after Bronze. Invalid records logged to \*\_LOAD\_ERROR tables with exact error messages, regardless of whether they came from CSV or Kafka.

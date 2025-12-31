@@ -17,172 +17,127 @@ CREATE OR REPLACE TABLE COMMON.DQ_CONFIG (
     CREATED_BY VARCHAR(100) DEFAULT CURRENT_USER()
 );
 
+-- Create DQ Statistics Table
+CREATE OR REPLACE TABLE COMMON.DQ_RUN_STATISTICS (
+    DQ_RUN_STAT_ID NUMBER IDENTITY(1,1) PRIMARY KEY,
+    INGEST_RUN_ID NUMBER NOT NULL,
+    VALIDATE_TABLE VARCHAR(500) NOT NULL,
+    STAGE_TABLE VARCHAR(500) NOT NULL,
+    ERROR_TABLE VARCHAR(500) NOT NULL,
+
+    -- Overall Statistics
+    TOTAL_ROWS_PROCESSED NUMBER DEFAULT 0,
+    TOTAL_VALID_ROWS NUMBER DEFAULT 0,
+    TOTAL_INVALID_ROWS NUMBER DEFAULT 0,
+    TOTAL_ERROR_COUNT NUMBER DEFAULT 0,
+    VALIDATION_CHECKS_EXECUTED NUMBER DEFAULT 0,
+
+    -- Percentage Metrics
+    VALID_ROWS_PERCENTAGE NUMBER(5,2) DEFAULT 0.00,
+    INVALID_ROWS_PERCENTAGE NUMBER(5,2) DEFAULT 0.00,
+    ERROR_RATE_PERCENTAGE NUMBER(5,2) DEFAULT 0.00,
+
+    -- Validation Type Breakdown (as VARIANT for flexibility)
+    VALIDATION_TYPE_STATS VARIANT,
+
+    -- Execution Details
+    EXECUTION_STATUS VARCHAR(50),
+    EXECUTION_ERROR_MESSAGE VARCHAR(5000),
+    EXECUTION_START_TIME TIMESTAMP_NTZ,
+    EXECUTION_END_TIME TIMESTAMP_NTZ,
+    EXECUTION_DURATION_SECONDS NUMBER(10,2),
+
+    -- Audit Columns
+    CREATED_DATE TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+    CREATED_BY VARCHAR(100) DEFAULT CURRENT_USER()
+);
 
 -- =====================================================
 -- STEP 2: INSERT DQ RULES FOR CUSTOMER
 -- =====================================================
--- =====================================================
--- DQ RULES FOR ORDER_ITEM TABLE
--- =====================================================
 
--- =====================================================
--- DQ RULES FOR ORDER_ITEM TABLE (MATCHING PROCEDURE)
--- =====================================================
+INSERT INTO COMMON.DQ_CONFIG (VALIDATE_TABLE, PRIMARY_KEY_COLUMN, ERROR_TABLE, VALIDATION_NAME, VALIDATION_TYPE, VALIDATE_COLUMN, VALIDATION_QUERY, VALIDATION_ERROR_MSG, STATUS) VALUES
 
-INSERT INTO COMMON.DQ_CONFIG (
-    VALIDATE_TABLE,
-    PRIMARY_KEY_COLUMN,
-    ERROR_TABLE,
-    VALIDATION_NAME,
-    VALIDATION_TYPE,
-    VALIDATE_COLUMN,
-    VALIDATION_QUERY,
-    VALIDATION_ERROR_MSG,
-    STATUS
-)
-VALUES
 -- ============= MANDATORY CHECKS =============
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_MAN_ORDER_ID', 'MANDATORY_CHECK', 'ORDER_ID', 'ORDER_ID IS NOT NULL AND TRIM(ORDER_ID) != ''''', 'ORDER_ID is mandatory', TRUE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_MAN_CUSTOMER_ID', 'MANDATORY_CHECK', 'CUSTOMER_ID', 'CUSTOMER_ID IS NOT NULL AND TRIM(CUSTOMER_ID) != ''''', 'CUSTOMER_ID is mandatory', TRUE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_MAN_RESTAURANT_ID', 'MANDATORY_CHECK', 'RESTAURANT_ID', 'RESTAURANT_ID IS NOT NULL', 'RESTAURANT_ID is mandatory', TRUE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_MAN_ORDER_DATE', 'MANDATORY_CHECK', 'ORDER_DATE', 'ORDER_DATE IS NOT NULL', 'ORDER_DATE is mandatory', TRUE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_MAN_TOTAL_AMOUNT', 'MANDATORY_CHECK', 'TOTAL_AMOUNT', 'TOTAL_AMOUNT IS NOT NULL', 'TOTAL_AMOUNT is mandatory', TRUE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_MAN_ORDER_STATUS', 'MANDATORY_CHECK', 'ORDER_STATUS', 'ORDER_STATUS IS NOT NULL AND TRIM(ORDER_STATUS) != ''''', 'ORDER_STATUS is mandatory', TRUE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_MAN_PAYMENT_METHOD', 'MANDATORY_CHECK', 'PAYMENT_METHOD', 'PAYMENT_METHOD IS NOT NULL AND TRIM(PAYMENT_METHOD) != ''''', 'PAYMENT_METHOD is mandatory', TRUE),
 
-('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
- 'DQ_OI_MAN_ORDER_ID', 'MANDATORY_CHECK', 'ORDER_ID',
- 'ORDER_ID IS NOT NULL AND TRIM(ORDER_ID) != ''''',
- 'ORDER_ID is mandatory', TRUE),
+-- ============= VALUE CHECKS =============
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_VAL_RESTAURANT_ID', 'VALUE_CHECK', 'RESTAURANT_ID', 'TRY_CAST(RESTAURANT_ID AS INTEGER) IS NOT NULL', 'RESTAURANT_ID is not a valid integer', TRUE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_VAL_TOTAL_AMOUNT', 'VALUE_CHECK', 'TOTAL_AMOUNT', 'TRY_CAST(TOTAL_AMOUNT AS NUMBER(10,2)) IS NOT NULL', 'TOTAL_AMOUNT is not a valid number', TRUE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_VAL_ORDER_STATUS', 'VALUE_CHECK', 'ORDER_STATUS', 'UPPER(ORDER_STATUS) IN (''OUT_FOR_DELIVERY'', ''COMPLETED'', ''CANCELLED'', ''PREPARING'', ''CONFIRMED'', ''DELIVERED'', ''PLACED'', ''READY'', ''PENDING'')', 'ORDER_STATUS is not valid', TRUE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_VAL_PAYMENT_METHOD', 'VALUE_CHECK', 'PAYMENT_METHOD', 'UPPER(PAYMENT_METHOD) IN (''WALLET'' ,''CASH'' ,''UPI'' ,''DEBIT CARD'' ,''CREDIT CARD'')', 'PAYMENT_METHOD is not valid', FALSE),
 
-('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
- 'DQ_OI_MAN_MENU_ID', 'MANDATORY_CHECK', 'MENU_ID',
- 'MENU_ID IS NOT NULL',
- 'MENU_ID is mandatory', TRUE),
+-- ============= LOOKUP CHECKS =============
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_OI_LKP_CUSTOMER_ID', 'LOOKUP_CHECK', 'CUSTOMER_ID', 'CUSTOMER_ID IN (SELECT CUSTOMER_ID FROM GOLD.FACT_ORDER WHERE CUSTOMER_ID IS NOT NULL)', 'CUSTOMER_ID does not exist in reference table', FALSE),
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_OI_LKP_RESTAURANT_ID', 'LOOKUP_CHECK', 'RESTAURANT_ID', 'RESTAURANT_ID IN (SELECT RESTAURANT_ID FROM GOLD.FACT_ORDER WHERE RESTAURANT_ID IS NOT NULL)', 'RESTAURANT_ID does not exist in reference table', FALSE),
 
-('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
- 'DQ_OI_MAN_QUANTITY', 'MANDATORY_CHECK', 'QUANTITY',
- 'QUANTITY IS NOT NULL',
- 'QUANTITY is mandatory', TRUE),
+-- ============= DUPLICATE CHECKS =============
+('BRONZE.ORDER_BRZ', 'ORDER_ID', 'BRONZE.ORDER_LOAD_ERROR', 'DQ_O_DUP_ORDER_ID', 'DUPLICATE_ALLOW_ONE_CHECK', 'ORDER_ID', NULL, 'Duplicate ORDER_ID found', TRUE);
 
-('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
- 'DQ_OI_MAN_PRICE', 'MANDATORY_CHECK', 'PRICE',
- 'PRICE IS NOT NULL',
- 'PRICE is mandatory', TRUE),
+-- =====================================================
+-- DQ RULES FOR DELIVERY_BRZ
+-- =====================================================
 
-('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
- 'DQ_OI_MAN_SUBTOTAL', 'MANDATORY_CHECK', 'SUBTOTAL',
- 'SUBTOTAL IS NOT NULL',
- 'SUBTOTAL is mandatory', TRUE),
+INSERT INTO COMMON.DQ_CONFIG (VALIDATE_TABLE, PRIMARY_KEY_COLUMN, ERROR_TABLE, VALIDATION_NAME, VALIDATION_TYPE, VALIDATE_COLUMN, VALIDATION_QUERY, VALIDATION_ERROR_MSG, STATUS) VALUES
 
-('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
- 'DQ_OI_MAN_ORDER_TIMESTAMP', 'MANDATORY_CHECK', 'ORDER_TIMESTAMP',
- 'ORDER_TIMESTAMP IS NOT NULL',
- 'ORDER_TIMESTAMP is mandatory', TRUE),
+-- ============= MANDATORY CHECKS =============
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_MAN_DELIVERY_ID', 'MANDATORY_CHECK', 'DELIVERY_ID', 'DELIVERY_ID IS NOT NULL AND TRIM(DELIVERY_ID) != ''''', 'DELIVERY_ID is mandatory', TRUE),
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_MAN_ORDER_ID', 'MANDATORY_CHECK', 'ORDER_ID', 'ORDER_ID IS NOT NULL AND TRIM(ORDER_ID) != ''''', 'ORDER_ID is mandatory', TRUE),
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_MAN_DELIVERY_AGENT_ID', 'MANDATORY_CHECK', 'DELIVERY_AGENT_ID', 'DELIVERY_AGENT_ID IS NOT NULL', 'DELIVERY_AGENT_ID is mandatory', TRUE),
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_MAN_DELIVERY_STATUS', 'MANDATORY_CHECK', 'DELIVERY_STATUS', 'DELIVERY_STATUS IS NOT NULL AND TRIM(DELIVERY_STATUS) != ''''', 'DELIVERY_STATUS is mandatory', TRUE),
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_MAN_CUSTOMER_ADDRESS_ID', 'MANDATORY_CHECK', 'CUSTOMER_ADDRESS_ID', 'CUSTOMER_ADDRESS_ID IS NOT NULL', 'CUSTOMER_ADDRESS_ID is mandatory', TRUE),
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_MAN_DELIVERY_DATE', 'MANDATORY_CHECK', 'DELIVERY_DATE', 'DELIVERY_DATE IS NOT NULL', 'DELIVERY_DATE is mandatory', TRUE),
 
--- ============= VALUE CHECKS (Data Type & Range) =============
+-- ============= VALUE CHECKS =============
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_VAL_DELIVERY_AGENT_ID', 'VALUE_CHECK', 'DELIVERY_AGENT_ID', 'TRY_CAST(DELIVERY_AGENT_ID AS INTEGER) IS NOT NULL', 'DELIVERY_AGENT_ID is not a valid integer', TRUE),
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_VAL_CUSTOMER_ADDRESS_ID', 'VALUE_CHECK', 'CUSTOMER_ADDRESS_ID', 'TRY_CAST(CUSTOMER_ADDRESS_ID AS INTEGER) IS NOT NULL', 'CUSTOMER_ADDRESS_ID is not a valid integer', TRUE),
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_VAL_DELIVERY_STATUS', 'VALUE_CHECK', 'DELIVERY_STATUS', 'UPPER(DELIVERY_STATUS) IN (''ASSIGNED'', ''PICKED_UP'', ''IN_TRANSIT'', ''DELIVERED'', ''FAILED'', ''CANCELLED'', ''PENDING'')', 'DELIVERY_STATUS is not valid', TRUE),
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_VAL_DELIVERY_DATE', 'VALUE_CHECK', 'DELIVERY_DATE', 'TRY_CAST(DELIVERY_DATE AS TIMESTAMP_TZ) IS NOT NULL', 'DELIVERY_DATE is not a valid timestamp', TRUE),
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_MENU_ID_TYPE', 'VALUE_CHECK', 'MENU_ID',
---  'TRY_CAST(MENU_ID AS INTEGER) IS NOT NULL',
---  'MENU_ID is not a valid integer', TRUE),
+-- ============= LOOKUP CHECKS =============
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_LKP_ORDER_ID', 'LOOKUP_CHECK', 'ORDER_ID', 'ORDER_ID IN (SELECT ORDER_ID FROM BRONZE.ORDER_BRZ WHERE ORDER_ID IS NOT NULL)', 'ORDER_ID does not exist in reference table', FALSE),
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_LKP_DELIVERY_AGENT_ID', 'LOOKUP_CHECK', 'DELIVERY_AGENT_ID', 'DELIVERY_AGENT_ID IN (SELECT DELIVERY_AGENT_ID FROM GOLD.DIM_DELIVERY_AGENT WHERE DELIVERY_AGENT_ID IS NOT NULL)', 'DELIVERY_AGENT_ID does not exist in reference table', FALSE),
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_QUANTITY_TYPE', 'VALUE_CHECK', 'QUANTITY',
---  'TRY_CAST(QUANTITY AS NUMBER(10,2)) IS NOT NULL',
---  'QUANTITY is not a valid number', TRUE),
+-- ============= DUPLICATE CHECKS =============
+('BRONZE.DELIVERY_BRZ', 'DELIVERY_ID', 'BRONZE.DELIVERY_LOAD_ERROR', 'DQ_D_DUP_DELIVERY_ID', 'DUPLICATE_ALLOW_ONE_CHECK', 'DELIVERY_ID', NULL, 'Duplicate DELIVERY_ID found', TRUE);
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_PRICE_TYPE', 'VALUE_CHECK', 'PRICE',
---  'TRY_CAST(PRICE AS NUMBER(10,2)) IS NOT NULL',
---  'PRICE is not a valid number', TRUE),
+-- =====================================================
+-- DQ RULES FOR ORDER_ITEM_BRZ
+-- =====================================================
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_SUBTOTAL_TYPE', 'VALUE_CHECK', 'SUBTOTAL',
---  'TRY_CAST(SUBTOTAL AS NUMBER(10,2)) IS NOT NULL',
---  'SUBTOTAL is not a valid number', TRUE),
+INSERT INTO COMMON.DQ_CONFIG (VALIDATE_TABLE, PRIMARY_KEY_COLUMN, ERROR_TABLE, VALIDATION_NAME, VALIDATION_TYPE, VALIDATE_COLUMN, VALIDATION_QUERY, VALIDATION_ERROR_MSG, STATUS) VALUES
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_ORDER_TIMESTAMP_TYPE', 'VALUE_CHECK', 'ORDER_TIMESTAMP',
---  'TRY_CAST(ORDER_TIMESTAMP AS DATE) IS NOT NULL',
---  'ORDER_TIMESTAMP is not a valid date', TRUE),
+-- ============= MANDATORY CHECKS =============
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_MAN_ORDER_ITEM_ID', 'MANDATORY_CHECK', 'ORDER_ITEM_ID', 'ORDER_ITEM_ID IS NOT NULL AND TRIM(ORDER_ITEM_ID) != ''''', 'ORDER_ITEM_ID is mandatory', TRUE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_MAN_ORDER_ID', 'MANDATORY_CHECK', 'ORDER_ID', 'ORDER_ID IS NOT NULL AND TRIM(ORDER_ID) != ''''', 'ORDER_ID is mandatory', TRUE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_MAN_MENU_ID', 'MANDATORY_CHECK', 'MENU_ID', 'MENU_ID IS NOT NULL', 'MENU_ID is mandatory', TRUE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_MAN_QUANTITY', 'MANDATORY_CHECK', 'QUANTITY', 'QUANTITY IS NOT NULL', 'QUANTITY is mandatory', TRUE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_MAN_PRICE', 'MANDATORY_CHECK', 'PRICE', 'PRICE IS NOT NULL', 'PRICE is mandatory', TRUE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_MAN_SUBTOTAL', 'MANDATORY_CHECK', 'SUBTOTAL', 'SUBTOTAL IS NOT NULL', 'SUBTOTAL is mandatory', TRUE),
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_QUANTITY_POSITIVE', 'VALUE_CHECK', 'QUANTITY',
---  'QUANTITY > 0',
---  'QUANTITY must be greater than 0', TRUE),
+-- ============= VALUE CHECKS =============
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_VAL_MENU_ID', 'VALUE_CHECK', 'MENU_ID', 'TRY_CAST(MENU_ID AS INTEGER) IS NOT NULL', 'MENU_ID is not a valid integer', TRUE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_VAL_QUANTITY', 'VALUE_CHECK', 'QUANTITY', 'TRY_CAST(QUANTITY AS NUMBER(10,2)) IS NOT NULL AND QUANTITY > 0', 'QUANTITY is not a valid positive number', TRUE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_VAL_PRICE', 'VALUE_CHECK', 'PRICE', 'TRY_CAST(PRICE AS NUMBER(10,2)) IS NOT NULL AND PRICE >= 0', 'PRICE is not a valid non-negative number', TRUE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_VAL_SUBTOTAL', 'VALUE_CHECK', 'SUBTOTAL', 'TRY_CAST(SUBTOTAL AS NUMBER(10,2)) IS NOT NULL AND SUBTOTAL >= 0', 'SUBTOTAL is not a valid non-negative number', TRUE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_VAL_ORDER_TIMESTAMP', 'VALUE_CHECK', 'ORDER_TIMESTAMP', 'TRY_CAST(ORDER_TIMESTAMP AS DATE) IS NOT NULL', 'ORDER_TIMESTAMP is not a valid date', TRUE),
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_QUANTITY_MAX', 'VALUE_CHECK', 'QUANTITY',
---  'QUANTITY <= 1000',
---  'QUANTITY exceeds maximum allowed value of 1000', TRUE),
+-- ============= BUSINESS LOGIC CHECKS =============
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_BUS_SUBTOTAL_CALC', 'VALUE_CHECK', 'SUBTOTAL', 'ABS(SUBTOTAL - (QUANTITY * PRICE)) < 0.01', 'SUBTOTAL does not match QUANTITY * PRICE', TRUE),
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_PRICE_POSITIVE', 'VALUE_CHECK', 'PRICE',
---  'PRICE > 0',
---  'PRICE must be greater than 0', TRUE),
+-- ============= LOOKUP CHECKS =============
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_LKP_ORDER_ID', 'LOOKUP_CHECK', 'ORDER_ID', 'ORDER_ID IN (SELECT ORDER_ID FROM BRONZE.ORDER_BRZ WHERE ORDER_ID IS NOT NULL)', 'ORDER_ID does not exist in reference table', FALSE),
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_LKP_MENU_ID', 'LOOKUP_CHECK', 'MENU_ID', 'MENU_ID IN (SELECT MENU_ID FROM GOLD.DIM_MENU WHERE MENU_ID IS NOT NULL)', 'MENU_ID does not exist in reference table', FALSE),
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_PRICE_MAX', 'VALUE_CHECK', 'PRICE',
---  'PRICE <= 100000',
---  'PRICE exceeds maximum allowed value', TRUE),
+-- ============= DUPLICATE CHECKS =============
+('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR', 'DQ_OI_DUP_ORDER_ITEM_ID', 'DUPLICATE_ALLOW_ONE_CHECK', 'ORDER_ITEM_ID', NULL, 'Duplicate ORDER_ITEM_ID found', TRUE);
 
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_SUBTOTAL_POSITIVE', 'VALUE_CHECK', 'SUBTOTAL',
---  'SUBTOTAL > 0',
---  'SUBTOTAL must be greater than 0', TRUE),
-
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_MENU_ID_POSITIVE', 'VALUE_CHECK', 'MENU_ID',
---  'MENU_ID > 0',
---  'MENU_ID must be greater than 0', TRUE),
-
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_SUBTOTAL_CALCULATION', 'VALUE_CHECK', 'SUBTOTAL',
---  'ABS(SUBTOTAL - (QUANTITY * PRICE)) < 0.01',
---  'SUBTOTAL does not match QUANTITY * PRICE calculation', TRUE),
-
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_ORDER_TIMESTAMP_PAST', 'VALUE_CHECK', 'ORDER_TIMESTAMP',
---  'ORDER_TIMESTAMP <= CURRENT_DATE()',
---  'ORDER_TIMESTAMP cannot be in the future', TRUE),
-
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_ORDER_TIMESTAMP_VALID_RANGE', 'VALUE_CHECK', 'ORDER_TIMESTAMP',
---  'ORDER_TIMESTAMP >= ''2020-01-01''',
---  'ORDER_TIMESTAMP is before valid business start date', TRUE),
-
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_ORDER_ITEM_ID_LENGTH', 'VALUE_CHECK', 'ORDER_ITEM_ID',
---  'LENGTH(TRIM(ORDER_ITEM_ID)) BETWEEN 1 AND 200',
---  'ORDER_ITEM_ID length is invalid', TRUE),
-
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_ORDER_ID_LENGTH', 'VALUE_CHECK', 'ORDER_ID',
---  'LENGTH(TRIM(ORDER_ID)) BETWEEN 1 AND 200',
---  'ORDER_ID length is invalid', TRUE),
-
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_QUANTITY_PRECISION', 'VALUE_CHECK', 'QUANTITY',
---  'QUANTITY = ROUND(QUANTITY, 2)',
---  'QUANTITY has more than 2 decimal places', TRUE),
-
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_PRICE_PRECISION', 'VALUE_CHECK', 'PRICE',
---  'PRICE = ROUND(PRICE, 2)',
---  'PRICE has more than 2 decimal places', TRUE),
-
--- ('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ITEM_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
---  'DQ_OI_VAL_SUBTOTAL_PRECISION', 'VALUE_CHECK', 'SUBTOTAL',
---  'SUBTOTAL = ROUND(SUBTOTAL, 2)',
---  'SUBTOTAL has more than 2 decimal places', TRUE);
-
--- ============= LOOKUP CHECKS (Referential Integrity) =============
--- Note: Enable these only after related tables are populated
-('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
- 'DQ_OI_LKP_ORDER_EXISTS', 'LOOKUP_CHECK', 'ORDER_ID',
- 'ORDER_ID IN (SELECT ORDER_ID FROM BRONZE.ORDERS_BRZ WHERE ORDER_ID IS NOT NULL)',
- 'ORDER_ID does not exist in ORDERS table', FALSE),
-
-('BRONZE.ORDER_ITEM_BRZ', 'ORDER_ID', 'BRONZE.ORDER_ITEM_LOAD_ERROR',
- 'DQ_OI_LKP_MENU_EXISTS', 'LOOKUP_CHECK', 'MENU_ID',
- 'MENU_ID IN (SELECT MENU_ID FROM BRONZE.MENU_BRZ WHERE MENU_ID IS NOT NULL)',
- 'MENU_ID does not exist in MENU table', FALSE);
-
- SELECT * FROM COMMON.DQ_CONFIG;
 -- =====================================================
 -- DATA QUALITY VALIDATION PROCEDURE
 -- =====================================================
@@ -209,8 +164,32 @@ DECLARE
     v_validation_error_msg VARCHAR;
     v_check_count INTEGER DEFAULT 0;
 
+    -- Statistics variables
+    v_start_time TIMESTAMP_NTZ;
+    v_end_time TIMESTAMP_NTZ;
+    v_stats_result RESULTSET;
+    v_total_rows NUMBER DEFAULT 0;
+    v_valid_rows NUMBER DEFAULT 0;
+    v_invalid_rows NUMBER DEFAULT 0;
+    v_total_errors NUMBER DEFAULT 0;
+    v_mandatory_check_count NUMBER DEFAULT 0;
+    v_value_check_count NUMBER DEFAULT 0;
+    v_lookup_check_count NUMBER DEFAULT 0;
+    v_duplicate_check_count NUMBER DEFAULT 0;
+    v_mandatory_errors NUMBER DEFAULT 0;
+    v_value_errors NUMBER DEFAULT 0;
+    v_lookup_errors NUMBER DEFAULT 0;
+    v_duplicate_errors NUMBER DEFAULT 0;
+    v_valid_pct NUMBER(5,2) DEFAULT 0.00;
+    v_invalid_pct NUMBER(5,2) DEFAULT 0.00;
+    v_error_rate_pct NUMBER(5,2) DEFAULT 0.00;
+    v_duration_seconds NUMBER(10,2) DEFAULT 0.00;
+    v_error_message VARCHAR;
+
 BEGIN
-    -- Fetch the primary key column first
+    v_start_time := CURRENT_TIMESTAMP();
+
+    -- Fetch primary key column
     v_sql := '
         SELECT PRIMARY_KEY_COLUMN
         FROM COMMON.DQ_CONFIG
@@ -220,16 +199,12 @@ BEGIN
         LIMIT 1
     ';
 
-    v_pk_rs := (
-        EXECUTE IMMEDIATE :v_sql
-        USING (P_VALIDATE_TABLE, P_ERROR_TABLE)
-    );
+    v_pk_rs := (EXECUTE IMMEDIATE :v_sql USING (P_VALIDATE_TABLE, P_ERROR_TABLE));
 
     FOR pk_record IN v_pk_rs DO
         v_primary_key_column := pk_record.PRIMARY_KEY_COLUMN;
     END FOR;
 
-    -- Validate that primary key column was found
     IF (v_primary_key_column IS NULL) THEN
         RETURN OBJECT_CONSTRUCT(
             'STATUS', 'FAILED',
@@ -262,10 +237,7 @@ BEGIN
             DQ_CONFIG_ID
     ';
 
-    v_rs := (
-        EXECUTE IMMEDIATE :v_sql
-        USING (P_VALIDATE_TABLE, P_ERROR_TABLE)
-    );
+    v_rs := (EXECUTE IMMEDIATE :v_sql USING (P_VALIDATE_TABLE, P_ERROR_TABLE));
 
     FOR record IN v_rs DO
         v_dq_config_id := record.DQ_CONFIG_ID;
@@ -280,172 +252,167 @@ BEGIN
         CASE v_validation_type
             -- ============= MANDATORY CHECK =============
             WHEN 'MANDATORY_CHECK' THEN
+                v_mandatory_check_count := v_mandatory_check_count + 1;
+
+                -- Single MERGE operation combining UPDATE and INSERT
+                v_sql := '
+                    MERGE INTO ' || P_ERROR_TABLE || ' e
+                    USING (
+                        SELECT
+                            ' || v_primary_key_column || ' as pk,
+                            ''' || v_validate_column || ''' as validate_col,
+                            ''' || v_validation_type || ''' as val_type,
+                            ''' || v_validation_error_msg || ''' as error_msg
+                        FROM ' || P_STAGE_TABLE || '
+                        WHERE IS_VALID = TRUE
+                          AND NOT (' || v_validation_query || ')
+                    ) s
+                    ON e.ERROR_ID = s.pk
+                       AND e.INGEST_RUN_ID = ' || P_INGEST_RUN_ID || '
+                       AND e.VALIDATE_COLUMN = s.validate_col
+                       AND e.VALIDATION_TYPE = s.val_type
+                    WHEN NOT MATCHED THEN
+                        INSERT (ERROR_ID, VALIDATE_COLUMN, VALIDATION_TYPE, VALIDATION_ERROR_MSG, INGEST_RUN_ID)
+                        VALUES (s.pk, s.validate_col, s.val_type, s.error_msg, ' || P_INGEST_RUN_ID || ')
+                ';
+                EXECUTE IMMEDIATE v_sql;
+
+                -- Update IS_VALID flag after inserting errors
                 v_sql := '
                     UPDATE ' || P_STAGE_TABLE || '
                     SET IS_VALID = FALSE
                     WHERE IS_VALID = TRUE
-                      AND NOT (' || v_validation_query || ')';
-                EXECUTE IMMEDIATE v_sql;
-
-                v_sql := '
-                    INSERT INTO ' || P_ERROR_TABLE || ' (
-                        ERROR_ID,
-                        VALIDATE_COLUMN,
-                        VALIDATION_TYPE,
-                        VALIDATION_ERROR_MSG,
-                        INGEST_RUN_ID
-                    )
-                    SELECT
-                        ' || v_primary_key_column || ',
-                        ''' || v_validate_column || ''',
-                        ''' || v_validation_type || ''',
-                        ''' || v_validation_error_msg || ''',
-                        ' || P_INGEST_RUN_ID || '
-                    FROM ' || P_STAGE_TABLE || '
-                    WHERE IS_VALID = FALSE
                       AND NOT (' || v_validation_query || ')
-                      AND ' || v_primary_key_column || ' NOT IN (
-                          SELECT ERROR_ID
-                          FROM ' || P_ERROR_TABLE || '
-                          WHERE INGEST_RUN_ID = ' || P_INGEST_RUN_ID || '
-                            AND VALIDATE_COLUMN = ''' || v_validate_column || '''
-                            AND VALIDATION_TYPE = ''' || v_validation_type || '''
-                      )';
+                ';
                 EXECUTE IMMEDIATE v_sql;
 
             -- ============= VALUE CHECK =============
             WHEN 'VALUE_CHECK' THEN
+                v_value_check_count := v_value_check_count + 1;
+
+                v_sql := '
+                    MERGE INTO ' || P_ERROR_TABLE || ' e
+                    USING (
+                        SELECT
+                            ' || v_primary_key_column || ' as pk,
+                            ''' || v_validate_column || ''' as validate_col,
+                            ''' || v_validation_type || ''' as val_type,
+                            ''' || v_validation_error_msg || ' - Value: '' || COALESCE(TO_VARCHAR(' || v_validate_column || '), ''NULL'') as error_msg
+                        FROM ' || P_STAGE_TABLE || '
+                        WHERE IS_VALID = TRUE
+                          AND ' || v_validate_column || ' IS NOT NULL
+                          AND NOT (' || v_validation_query || ')
+                    ) s
+                    ON e.ERROR_ID = s.pk
+                       AND e.INGEST_RUN_ID = ' || P_INGEST_RUN_ID || '
+                       AND e.VALIDATE_COLUMN = s.validate_col
+                       AND e.VALIDATION_TYPE = s.val_type
+                    WHEN NOT MATCHED THEN
+                        INSERT (ERROR_ID, VALIDATE_COLUMN, VALIDATION_TYPE, VALIDATION_ERROR_MSG, INGEST_RUN_ID)
+                        VALUES (s.pk, s.validate_col, s.val_type, s.error_msg, ' || P_INGEST_RUN_ID || ')
+                ';
+                EXECUTE IMMEDIATE v_sql;
+
                 v_sql := '
                     UPDATE ' || P_STAGE_TABLE || '
                     SET IS_VALID = FALSE
                     WHERE IS_VALID = TRUE
                       AND ' || v_validate_column || ' IS NOT NULL
-                      AND NOT (' || v_validation_query || ')';
-                EXECUTE IMMEDIATE v_sql;
-
-                v_sql := '
-                    INSERT INTO ' || P_ERROR_TABLE || ' (
-                        ERROR_ID,
-                        VALIDATE_COLUMN,
-                        VALIDATION_TYPE,
-                        VALIDATION_ERROR_MSG,
-                        INGEST_RUN_ID
-                    )
-                    SELECT
-                        ' || v_primary_key_column || ',
-                        ''' || v_validate_column || ''',
-                        ''' || v_validation_type || ''',
-                        ''' || v_validation_error_msg || ' - Value: '' || COALESCE(TO_VARCHAR(' || v_validate_column || '), ''NULL''),
-                        ' || P_INGEST_RUN_ID || '
-                    FROM ' || P_STAGE_TABLE || '
-                    WHERE IS_VALID = FALSE
-                      AND ' || v_validate_column || ' IS NOT NULL
                       AND NOT (' || v_validation_query || ')
-                      AND ' || v_primary_key_column || ' NOT IN (
-                          SELECT ERROR_ID
-                          FROM ' || P_ERROR_TABLE || '
-                          WHERE INGEST_RUN_ID = ' || P_INGEST_RUN_ID || '
-                            AND VALIDATE_COLUMN = ''' || v_validate_column || '''
-                            AND VALIDATION_TYPE = ''' || v_validation_type || '''
-                      )';
+                ';
                 EXECUTE IMMEDIATE v_sql;
 
             -- ============= LOOKUP CHECK =============
             WHEN 'LOOKUP_CHECK' THEN
+                v_lookup_check_count := v_lookup_check_count + 1;
+
+                v_sql := '
+                    MERGE INTO ' || P_ERROR_TABLE || ' e
+                    USING (
+                        SELECT
+                            ' || v_primary_key_column || ' as pk,
+                            ''' || v_validate_column || ''' as validate_col,
+                            ''' || v_validation_type || ''' as val_type,
+                            ''' || v_validation_error_msg || ' - Value: '' || COALESCE(TO_VARCHAR(' || v_validate_column || '), ''NULL'') as error_msg
+                        FROM ' || P_STAGE_TABLE || '
+                        WHERE IS_VALID = TRUE
+                          AND ' || v_validate_column || ' IS NOT NULL
+                          AND NOT (' || v_validation_query || ')
+                    ) s
+                    ON e.ERROR_ID = s.pk
+                       AND e.INGEST_RUN_ID = ' || P_INGEST_RUN_ID || '
+                       AND e.VALIDATE_COLUMN = s.validate_col
+                       AND e.VALIDATION_TYPE = s.val_type
+                    WHEN NOT MATCHED THEN
+                        INSERT (ERROR_ID, VALIDATE_COLUMN, VALIDATION_TYPE, VALIDATION_ERROR_MSG, INGEST_RUN_ID)
+                        VALUES (s.pk, s.validate_col, s.val_type, s.error_msg, ' || P_INGEST_RUN_ID || ')
+                ';
+                EXECUTE IMMEDIATE v_sql;
+
                 v_sql := '
                     UPDATE ' || P_STAGE_TABLE || '
                     SET IS_VALID = FALSE
                     WHERE IS_VALID = TRUE
                       AND ' || v_validate_column || ' IS NOT NULL
-                      AND NOT (' || v_validation_query || ')';
-                EXECUTE IMMEDIATE v_sql;
-
-                v_sql := '
-                    INSERT INTO ' || P_ERROR_TABLE || ' (
-                        ERROR_ID,
-                        VALIDATE_COLUMN,
-                        VALIDATION_TYPE,
-                        VALIDATION_ERROR_MSG,
-                        INGEST_RUN_ID
-                    )
-                    SELECT
-                        ' || v_primary_key_column || ',
-                        ''' || v_validate_column || ''',
-                        ''' || v_validation_type || ''',
-                        ''' || v_validation_error_msg || ' - Value: '' || COALESCE(TO_VARCHAR(' || v_validate_column || '), ''NULL''),
-                        ' || P_INGEST_RUN_ID || '
-                    FROM ' || P_STAGE_TABLE || '
-                    WHERE IS_VALID = FALSE
-                      AND ' || v_validate_column || ' IS NOT NULL
                       AND NOT (' || v_validation_query || ')
-                      AND ' || v_primary_key_column || ' NOT IN (
-                          SELECT ERROR_ID
-                          FROM ' || P_ERROR_TABLE || '
-                          WHERE INGEST_RUN_ID = ' || P_INGEST_RUN_ID || '
-                            AND VALIDATE_COLUMN = ''' || v_validate_column || '''
-                            AND VALIDATION_TYPE = ''' || v_validation_type || '''
-                      )';
+                ';
                 EXECUTE IMMEDIATE v_sql;
 
             -- ============= DUPLICATE_ALLOW_ONE CHECK =============
             WHEN 'DUPLICATE_ALLOW_ONE_CHECK' THEN
+                v_duplicate_check_count := v_duplicate_check_count + 1;
+
+                -- Optimized duplicate check using window functions with CTE
                 v_sql := '
-                    UPDATE ' || P_STAGE_TABLE || ' t1
-                    SET IS_VALID = FALSE
-                    WHERE IS_VALID = TRUE
-                      AND ' || v_validate_column || ' IS NOT NULL
-                      AND ' || v_validate_column || ' IN (
-                          SELECT ' || v_validate_column || '
-                          FROM ' || P_STAGE_TABLE || '
-                          WHERE ' || v_validate_column || ' IS NOT NULL
-                          GROUP BY ' || v_validate_column || '
-                          HAVING COUNT(*) > 1
-                      )
-                      AND ' || v_primary_key_column || ' NOT IN (
-                          SELECT MIN(' || v_primary_key_column || ')
-                          FROM ' || P_STAGE_TABLE || '
-                          WHERE ' || v_validate_column || ' IS NOT NULL
-                          GROUP BY ' || v_validate_column || '
-                      )';
+                    MERGE INTO ' || P_ERROR_TABLE || ' e
+                    USING (
+                        WITH dup_analysis AS (
+                            SELECT
+                                ' || v_primary_key_column || ' as pk_col,
+                                ' || v_validate_column || ' as val_col,
+                                ROW_NUMBER() OVER (PARTITION BY ' || v_validate_column || ' ORDER BY ' || v_primary_key_column || ') as rn,
+                                COUNT(*) OVER (PARTITION BY ' || v_validate_column || ') as dup_cnt
+                            FROM ' || P_STAGE_TABLE || '
+                            WHERE IS_VALID = TRUE
+                              AND ' || v_validate_column || ' IS NOT NULL
+                        )
+                        SELECT
+                            pk_col as pk,
+                            ''' || v_validate_column || ''' as validate_col,
+                            ''' || v_validation_type || ''' as val_type,
+                            ''' || v_validation_error_msg || ' - Value: '' || COALESCE(TO_VARCHAR(val_col), ''NULL'') as error_msg
+                        FROM dup_analysis
+                        WHERE rn > 1 AND dup_cnt > 1
+                    ) s
+                    ON e.ERROR_ID = s.pk
+                       AND e.INGEST_RUN_ID = ' || P_INGEST_RUN_ID || '
+                       AND e.VALIDATE_COLUMN = s.validate_col
+                       AND e.VALIDATION_TYPE = s.val_type
+                    WHEN NOT MATCHED THEN
+                        INSERT (ERROR_ID, VALIDATE_COLUMN, VALIDATION_TYPE, VALIDATION_ERROR_MSG, INGEST_RUN_ID)
+                        VALUES (s.pk, s.validate_col, s.val_type, s.error_msg, ' || P_INGEST_RUN_ID || ')
+                ';
                 EXECUTE IMMEDIATE v_sql;
 
                 v_sql := '
-                    INSERT INTO ' || P_ERROR_TABLE || ' (
-                        ERROR_ID,
-                        VALIDATE_COLUMN,
-                        VALIDATION_TYPE,
-                        VALIDATION_ERROR_MSG,
-                        INGEST_RUN_ID
-                    )
-                    SELECT
-                        ' || v_primary_key_column || ',
-                        ''' || v_validate_column || ''',
-                        ''' || v_validation_type || ''',
-                        ''' || v_validation_error_msg || ' - Value: '' || COALESCE(TO_VARCHAR(' || v_validate_column || '), ''NULL''),
-                        ' || P_INGEST_RUN_ID || '
-                    FROM ' || P_STAGE_TABLE || '
-                    WHERE IS_VALID = FALSE
+                    UPDATE ' || P_STAGE_TABLE || '
+                    SET IS_VALID = FALSE
+                    WHERE IS_VALID = TRUE
                       AND ' || v_validate_column || ' IS NOT NULL
-                      AND ' || v_validate_column || ' IN (
-                          SELECT ' || v_validate_column || '
-                          FROM ' || P_STAGE_TABLE || '
-                          WHERE ' || v_validate_column || ' IS NOT NULL
-                          GROUP BY ' || v_validate_column || '
-                          HAVING COUNT(*) > 1
+                      AND ' || v_primary_key_column || ' IN (
+                          WITH dup_analysis AS (
+                              SELECT
+                                  ' || v_primary_key_column || ' as pk_col,
+                                  ROW_NUMBER() OVER (PARTITION BY ' || v_validate_column || ' ORDER BY ' || v_primary_key_column || ') as rn,
+                                  COUNT(*) OVER (PARTITION BY ' || v_validate_column || ') as dup_cnt
+                              FROM ' || P_STAGE_TABLE || '
+                              WHERE ' || v_validate_column || ' IS NOT NULL
+                          )
+                          SELECT pk_col
+                          FROM dup_analysis
+                          WHERE rn > 1 AND dup_cnt > 1
                       )
-                      AND ' || v_primary_key_column || ' NOT IN (
-                          SELECT MIN(' || v_primary_key_column || ')
-                          FROM ' || P_STAGE_TABLE || '
-                          WHERE ' || v_validate_column || ' IS NOT NULL
-                          GROUP BY ' || v_validate_column || '
-                      )
-                      AND ' || v_primary_key_column || ' NOT IN (
-                          SELECT ERROR_ID
-                          FROM ' || P_ERROR_TABLE || '
-                          WHERE INGEST_RUN_ID = ' || P_INGEST_RUN_ID || '
-                            AND VALIDATE_COLUMN = ''' || v_validate_column || '''
-                            AND VALIDATION_TYPE = ''' || v_validation_type || '''
-                      )';
+                ';
                 EXECUTE IMMEDIATE v_sql;
 
             ELSE
@@ -457,15 +424,141 @@ BEGIN
         END CASE;
     END FOR;
 
+    -- ============= COLLECT STATISTICS (Single Query) =============
+    v_sql := '
+        SELECT
+            (SELECT COUNT(*) FROM ' || P_STAGE_TABLE || ') as total_rows,
+            (SELECT COUNT(*) FROM ' || P_STAGE_TABLE || ' WHERE IS_VALID = TRUE) as valid_rows,
+            (SELECT COUNT(*) FROM ' || P_STAGE_TABLE || ' WHERE IS_VALID = FALSE) as invalid_rows,
+            (SELECT COUNT(*) FROM ' || P_ERROR_TABLE || ' WHERE INGEST_RUN_ID = ' || P_INGEST_RUN_ID || ') as total_errors,
+            (SELECT COUNT(*) FROM ' || P_ERROR_TABLE || ' WHERE INGEST_RUN_ID = ' || P_INGEST_RUN_ID || ' AND VALIDATION_TYPE = ''MANDATORY_CHECK'') as mandatory_errors,
+            (SELECT COUNT(*) FROM ' || P_ERROR_TABLE || ' WHERE INGEST_RUN_ID = ' || P_INGEST_RUN_ID || ' AND VALIDATION_TYPE = ''VALUE_CHECK'') as value_errors,
+            (SELECT COUNT(*) FROM ' || P_ERROR_TABLE || ' WHERE INGEST_RUN_ID = ' || P_INGEST_RUN_ID || ' AND VALIDATION_TYPE = ''LOOKUP_CHECK'') as lookup_errors,
+            (SELECT COUNT(*) FROM ' || P_ERROR_TABLE || ' WHERE INGEST_RUN_ID = ' || P_INGEST_RUN_ID || ' AND VALIDATION_TYPE = ''DUPLICATE_ALLOW_ONE_CHECK'') as duplicate_errors
+    ';
+
+    v_stats_result := (EXECUTE IMMEDIATE :v_sql);
+    FOR rec IN v_stats_result DO
+        v_total_rows := rec.TOTAL_ROWS;
+        v_valid_rows := rec.VALID_ROWS;
+        v_invalid_rows := rec.INVALID_ROWS;
+        v_total_errors := rec.TOTAL_ERRORS;
+        v_mandatory_errors := rec.MANDATORY_ERRORS;
+        v_value_errors := rec.VALUE_ERRORS;
+        v_lookup_errors := rec.LOOKUP_ERRORS;
+        v_duplicate_errors := rec.DUPLICATE_ERRORS;
+    END FOR;
+
+    v_end_time := CURRENT_TIMESTAMP();
+    v_duration_seconds := DATEDIFF(SECOND, v_start_time, v_end_time);
+
+    -- Calculate percentages
+    IF (v_total_rows > 0) THEN
+        v_valid_pct := ROUND((v_valid_rows / v_total_rows) * 100, 2);
+        v_invalid_pct := ROUND((v_invalid_rows / v_total_rows) * 100, 2);
+        v_error_rate_pct := ROUND((v_total_errors / v_total_rows) * 100, 2);
+    END IF;
+
+    -- Insert statistics
+    INSERT INTO COMMON.DQ_RUN_STATISTICS (
+        INGEST_RUN_ID,
+        VALIDATE_TABLE,
+        STAGE_TABLE,
+        ERROR_TABLE,
+        TOTAL_ROWS_PROCESSED,
+        TOTAL_VALID_ROWS,
+        TOTAL_INVALID_ROWS,
+        TOTAL_ERROR_COUNT,
+        VALIDATION_CHECKS_EXECUTED,
+        VALID_ROWS_PERCENTAGE,
+        INVALID_ROWS_PERCENTAGE,
+        ERROR_RATE_PERCENTAGE,
+        VALIDATION_TYPE_STATS,
+        EXECUTION_STATUS,
+        EXECUTION_ERROR_MESSAGE,
+        EXECUTION_START_TIME,
+        EXECUTION_END_TIME,
+        EXECUTION_DURATION_SECONDS
+    )
+    SELECT
+        :P_INGEST_RUN_ID,
+        :P_VALIDATE_TABLE,
+        :P_STAGE_TABLE,
+        :P_ERROR_TABLE,
+        :v_total_rows,
+        :v_valid_rows,
+        :v_invalid_rows,
+        :v_total_errors,
+        :v_check_count,
+        :v_valid_pct,
+        :v_invalid_pct,
+        :v_error_rate_pct,
+        OBJECT_CONSTRUCT(
+            'MANDATORY_CHECK', OBJECT_CONSTRUCT(
+                'checks_executed', :v_mandatory_check_count,
+                'errors_found', :v_mandatory_errors
+            ),
+            'VALUE_CHECK', OBJECT_CONSTRUCT(
+                'checks_executed', :v_value_check_count,
+                'errors_found', :v_value_errors
+            ),
+            'LOOKUP_CHECK', OBJECT_CONSTRUCT(
+                'checks_executed', :v_lookup_check_count,
+                'errors_found', :v_lookup_errors
+            ),
+            'DUPLICATE_ALLOW_ONE_CHECK', OBJECT_CONSTRUCT(
+                'checks_executed', :v_duplicate_check_count,
+                'errors_found', :v_duplicate_errors
+            )
+        ),
+        'SUCCESS',
+        'NONE',
+        :v_start_time,
+        :v_end_time,
+        :v_duration_seconds;
+
     RETURN OBJECT_CONSTRUCT(
         'STATUS', 'SUCCESS',
         'ERROR', 'NONE',
         'ROWS_VALIDATED', v_check_count::VARCHAR,
-        'MESSAGE', 'validation checks executed'
+        'MESSAGE', 'validation checks executed',
+        'TOTAL_ROWS', v_total_rows,
+        'VALID_ROWS', v_valid_rows,
+        'INVALID_ROWS', v_invalid_rows,
+        'TOTAL_ERRORS', v_total_errors
     );
 
 EXCEPTION
     WHEN OTHER THEN
+        v_end_time := CURRENT_TIMESTAMP();
+        v_duration_seconds := DATEDIFF(SECOND, v_start_time, v_end_time);
+        V_ERROR_MESSAGE := SQLERRM;
+
+        INSERT INTO COMMON.DQ_RUN_STATISTICS (
+            INGEST_RUN_ID,
+            VALIDATE_TABLE,
+            STAGE_TABLE,
+            ERROR_TABLE,
+            VALIDATION_CHECKS_EXECUTED,
+            EXECUTION_STATUS,
+            EXECUTION_ERROR_MESSAGE,
+            EXECUTION_START_TIME,
+            EXECUTION_END_TIME,
+            EXECUTION_DURATION_SECONDS
+        )
+        VALUES (
+            :P_INGEST_RUN_ID,
+            :P_VALIDATE_TABLE,
+            :P_STAGE_TABLE,
+            :P_ERROR_TABLE,
+            :v_check_count,
+            'FAILED',
+            :V_ERROR_MESSAGE,
+            :v_start_time,
+            :v_end_time,
+            :v_duration_seconds
+        );
+
         RETURN OBJECT_CONSTRUCT(
             'STATUS', 'FAILED',
             'ERROR', SQLERRM,
@@ -474,157 +567,6 @@ EXCEPTION
         );
 END;
 $$;
-
-
--- =====================================================
--- DQ CHECK DEFINATION
--- =====================================================
-SELECT * FROM COMMON.DQ_CONFIG;
-    -- NAME,
-    --             $2::STRING AS MOBILE,
-    --             $3::STRING AS EMAIL,
-    --             $4::STRING AS LOGIN_BY_USING,
-    --             $5::STRING AS GENDER,
-    --             $6::STRING AS DOB,
-    --             $7::STRING AS ANNIVERSARY,
-    --             $8::STRING AS PREFERENCES
-
-    -- -- ============= VALUE RANGE CHECKS =============
-    -- ('bronze.customers', 'Age Range', 'VALUE_RANGE',
-    --  'age', 'age BETWEEN 18 AND 120',
-    --  NULL, NULL, 'Age must be between 18 and 120', 'ERROR', 20),
-
-    -- ('bronze.customers', 'Salary Range', 'VALUE_RANGE',
-    --  'salary', 'salary >= 0 AND salary <= 10000000',
-    --  NULL, NULL, 'Salary must be between 0 and 10M', 'WARNING', 21),
-
-    -- ('bronze.customers', 'Valid Status', 'VALUE_RANGE',
-    --  'status', 'status IN (''ACTIVE'', ''INACTIVE'', ''PENDING'', ''SUSPENDED'')',
-    --  NULL, NULL, 'Invalid customer status', 'ERROR', 22),
-
-    -- ('bronze.customers', 'Credit Score Range', 'VALUE_RANGE',
-    --  'credit_score', 'credit_score BETWEEN 300 AND 850',
-    --  NULL, NULL, 'Credit score out of valid range', 'WARNING', 23),
-
-    -- -- ============= DUPLICATE CHECKS =============
-    -- ('bronze.customers', 'Unique Customer ID', 'DUPLICATE',
-    --  'customer_id', 'customer_id',
-    --  NULL, NULL, 'Duplicate customer_id found', 'CRITICAL', 30),
-
-    -- ('bronze.customers', 'Unique Email', 'DUPLICATE',
-    --  'email', 'email',
-    --  NULL, NULL, 'Duplicate email address found', 'ERROR', 31),
-
-    -- ('bronze.customers', 'Unique SSN', 'DUPLICATE',
-    --  'ssn', 'ssn',
-    --  NULL, NULL, 'Duplicate SSN found', 'CRITICAL', 32),
-
-    -- -- ============= PATTERN/FORMAT CHECKS =============
-    -- ('bronze.customers', 'Email Format', 'PATTERN',
-    --  'email', 'REGEXP_LIKE(email, ''^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$'')',
-    --  NULL, NULL, 'Invalid email format', 'ERROR', 40),
-
-    -- ('bronze.customers', 'Phone Format', 'PATTERN',
-    --  'phone', 'REGEXP_LIKE(phone, ''^\\+?[1-9]\\d{1,14}$'') OR phone IS NULL',
-    --  NULL, NULL, 'Invalid phone number format', 'WARNING', 41),
-
-    -- ('bronze.customers', 'Postal Code Format', 'PATTERN',
-    --  'postal_code', 'REGEXP_LIKE(postal_code, ''^[0-9]{5}(-[0-9]{4})?$'') OR postal_code IS NULL',
-    --  NULL, NULL, 'Invalid US postal code format', 'WARNING', 42),
-
-    -- ('bronze.customers', 'SSN Format', 'PATTERN',
-    --  'ssn', 'REGEXP_LIKE(ssn, ''^[0-9]{3}-[0-9]{2}-[0-9]{4}$'') OR ssn IS NULL',
-    --  NULL, NULL, 'Invalid SSN format (XXX-XX-XXXX)', 'ERROR', 43),
-
-    -- -- ============= REFERENTIAL INTEGRITY CHECKS =============
-    -- ('bronze.orders', 'Valid Customer Reference', 'REFERENTIAL_INTEGRITY',
-    --  'customer_id', 'customer_id',
-    --  'silver.customers', NULL, 'Customer ID does not exist in customer table', 'CRITICAL', 50),
-
-    -- ('bronze.orders', 'Valid Product Reference', 'REFERENTIAL_INTEGRITY',
-    --  'product_id', 'product_id',
-    --  'silver.products', NULL, 'Product ID does not exist in product table', 'CRITICAL', 51),
-
-    -- ('bronze.transactions', 'Valid Account Reference', 'REFERENTIAL_INTEGRITY',
-    --  'account_id', 'account_id',
-    --  'silver.accounts', NULL, 'Account ID not found', 'CRITICAL', 52),
-
-    -- -- ============= DATA TYPE CHECKS =============
-    -- ('bronze.customers', 'Email Data Type', 'DATA_TYPE',
-    --  'email', 'TRY_CAST(email AS VARCHAR) IS NOT NULL',
-    --  NULL, NULL, 'Email is not a valid string', 'ERROR', 60),
-
-    -- ('bronze.customers', 'Age Numeric', 'DATA_TYPE',
-    --  'age', 'TRY_CAST(age AS INTEGER) IS NOT NULL',
-    --  NULL, NULL, 'Age must be numeric', 'ERROR', 61),
-
-    -- ('bronze.orders', 'Order Date Valid', 'DATA_TYPE',
-    --  'order_date', 'TRY_CAST(order_date AS DATE) IS NOT NULL',
-    --  NULL, NULL, 'Invalid date format', 'CRITICAL', 62),
-
-    -- -- ============= COMPLETENESS CHECKS =============
-    -- ('bronze.customers', 'Address Completeness', 'COMPLETENESS',
-    --  'address', 'address IS NOT NULL AND city IS NOT NULL AND state IS NOT NULL',
-    --  NULL, '0.95', 'Address information incomplete', 'WARNING', 70),
-
-    -- ('bronze.customers', 'Contact Info Completeness', 'COMPLETENESS',
-    --  'phone,email', 'phone IS NOT NULL OR email IS NOT NULL',
-    --  NULL, NULL, 'At least one contact method required', 'ERROR', 71),
-
-    -- -- ============= CONSISTENCY CHECKS =============
-    -- ('bronze.orders', 'Order Amount Consistency', 'CONSISTENCY',
-    --  'total_amount', 'total_amount = (quantity * unit_price)',
-    --  NULL, NULL, 'Total amount does not match quantity × price', 'ERROR', 80),
-
-    -- ('bronze.customers', 'Age vs DOB Consistency', 'CONSISTENCY',
-    --  'age', 'age = YEAR(CURRENT_DATE()) - YEAR(date_of_birth)',
-    --  NULL, NULL, 'Age does not match date of birth', 'WARNING', 81),
-
-    -- ('bronze.orders', 'Date Logic Consistency', 'CONSISTENCY',
-    --  'ship_date', 'ship_date >= order_date OR ship_date IS NULL',
-    --  NULL, NULL, 'Ship date cannot be before order date', 'ERROR', 82),
-
-    -- -- ============= FRESHNESS CHECKS =============
-    -- ('bronze.customers', 'Data Freshness', 'FRESHNESS',
-    --  'last_updated', 'last_updated >= DATEADD(day, -30, CURRENT_DATE())',
-    --  NULL, '30', 'Record not updated in last 30 days', 'WARNING', 90),
-
-    -- ('bronze.transactions', 'Transaction Recency', 'FRESHNESS',
-    --  'transaction_date', 'transaction_date >= DATEADD(day, -7, CURRENT_DATE())',
-    --  NULL, '7', 'Transaction older than 7 days', 'WARNING', 91),
-
-    -- -- ============= VOLUME/COUNT CHECKS =============
-    -- ('bronze.customers', 'Minimum Record Count', 'VOLUME',
-    --  NULL, 'COUNT(*) >= 100',
-    --  NULL, '100', 'Insufficient records loaded', 'CRITICAL', 100),
-
-    -- ('bronze.orders', 'Expected Daily Volume', 'VOLUME',
-    --  NULL, 'COUNT(*) BETWEEN 1000 AND 50000',
-    --  NULL, '1000-50000', 'Order volume outside expected range', 'WARNING', 101),
-
-    -- -- ============= STATISTICAL CHECKS =============
-    -- ('bronze.customers', 'Salary Outlier Detection', 'STATISTICAL',
-    --  'salary', 'salary <= (SELECT AVG(salary) + (3 * STDDEV(salary)) FROM bronze.customers)',
-    --  NULL, '3', 'Salary is statistical outlier (3 sigma)', 'WARNING', 110),
-
-    -- ('bronze.orders', 'Order Amount Distribution', 'STATISTICAL',
-    --  'order_amount', 'order_amount BETWEEN 1 AND 10000',
-    --  NULL, '10000', 'Order amount exceeds typical range', 'WARNING', 111),
-
-    -- -- ============= CUSTOM BUSINESS RULE CHECKS =============
-    -- ('bronze.customers', 'VIP Status Business Rule', 'CUSTOM_QUERY',
-    --  'customer_type', 'NOT (customer_type = ''VIP'' AND total_purchases < 10000)',
-    --  NULL, NULL, 'VIP customers must have purchases >= $10,000', 'ERROR', 120),
-
-    -- ('bronze.orders', 'Discount Logic', 'CUSTOM_QUERY',
-    --  'discount_amount', 'discount_amount <= (total_amount * 0.5)',
-    --  NULL, NULL, 'Discount cannot exceed 50% of total amount', 'ERROR', 121),
-
-    -- ('bronze.employees', 'Salary Grade Alignment', 'CUSTOM_QUERY',
-    --  'salary', 'salary BETWEEN (SELECT min_salary FROM ref.salary_grades WHERE grade = employee_grade)
-    --                        AND (SELECT max_salary FROM ref.salary_grades WHERE grade = employee_grade)',
-    --  'ref.salary_grades', NULL, 'Salary not aligned with employee grade', 'WARNING', 122);
-
 -- =====================================================
 -- DQ CHECK VALIDATION
 -- =====================================================
@@ -686,45 +628,6 @@ SELECT * FROM COMMON.DQ_CONFIG;
             --                    GROUP BY ' || v_validation_column || '
             --                    HAVING COUNT(*) > 1
             --                )';
-            --     EXECUTE IMMEDIATE v_sql;
-
-            -- WHEN 'REFERENTIAL_INTEGRITY' THEN
-            --     -- FK check using validation_table and validation_column
-            --     v_sql := 'UPDATE ' || p_stage_table || ' stg
-            --              SET is_valid = FALSE,
-            --                  dq_errors = ARRAY_APPEND(dq_errors,
-            --                      OBJECT_CONSTRUCT(
-            --                          ''check_id'', ' || v_dq_config_id || ',
-            --                          ''check_name'', ''' || v_validation_name || ''',
-            --                          ''type'', ''' || v_validation_type || ''',
-            --                          ''column'', ''' || v_validation_column || ''',
-            --                          ''reference_table'', ''' || v_validation_table || ''',
-            --                          ''message'', ''' || v_validation_error_msg || ''',
-            --                          ''severity'', ''' || v_severity || ''',
-            --                          ''value'', TO_VARCHAR(' || v_validation_column || ')
-            --                      ))
-            --              WHERE is_valid = TRUE
-            --                AND ' || v_validation_column || ' IS NOT NULL
-            --                AND ' || v_validation_column || ' NOT IN (
-            --                    SELECT ' || v_validation_column || '
-            --                    FROM ' || v_validation_table || '
-            --                )';
-            --     EXECUTE IMMEDIATE v_sql;
-
-            -- WHEN 'DATA_TYPE' THEN
-            --     -- Data type validation using validation_query
-            --     v_sql := 'UPDATE ' || p_stage_table || '
-            --              SET is_valid = FALSE,
-            --                  dq_errors = ARRAY_APPEND(dq_errors,
-            --                      OBJECT_CONSTRUCT(
-            --                          ''check_id'', ' || v_dq_config_id || ',
-            --                          ''check_name'', ''' || v_validation_name || ''',
-            --                          ''type'', ''' || v_validation_type || ''',
-            --                          ''column'', ''' || v_validation_column || ''',
-            --                          ''message'', ''' || v_validation_error_msg || ''',
-            --                          ''severity'', ''' || v_severity || '''
-            --                      ))
-            --              WHERE NOT (' || v_validation_query || ') AND is_valid = TRUE';
             --     EXECUTE IMMEDIATE v_sql;
 
             -- WHEN 'COMPLETENESS' THEN
