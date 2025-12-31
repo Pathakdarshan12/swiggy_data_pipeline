@@ -23,6 +23,7 @@ CREATE SCHEMA IF NOT EXISTS BRONZE;
 CREATE SCHEMA IF NOT EXISTS SILVER;
 CREATE SCHEMA IF NOT EXISTS GOLD;
 CREATE SCHEMA IF NOT EXISTS COMMON;
+CREATE SCHEMA IF NOT EXISTS ANALYTICS;
 
 -- ----------------------------------------------------------------------------------------------------
 -- Create File Formats for stage files
@@ -88,7 +89,7 @@ TO_VARCHAR('** PII **');
 CREATE OR REPLACE MASKING POLICY
 COMMON.EMAIL_MASKING_POLICY AS (EMAIL_TEXT STRING)
 RETURNS STRING ->
-TO_VARCHAR('** EAMIL **');
+TO_VARCHAR('** EMAIL **');
 -- ----------------------------------------------------------------------------------------------------
 CREATE OR REPLACE MASKING POLICY
 COMMON.PHONE_MASKING_POLICY AS (PHONE STRING)
